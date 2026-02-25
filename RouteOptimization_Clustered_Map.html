@@ -1,0 +1,696 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width,initial-scale=1.0">
+<title>Route Optimization</title>
+<link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css"/>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600&display=swap" rel="stylesheet">
+<script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js"></script>
+<style>
+  :root {
+    /* Neutral grays — light mode, easy on the eyes */
+    --bg:          #f4f5f7;
+    --surface:     #ffffff;
+    --surface2:    #f9fafb;
+    --border:      #dde1e7;
+    --border2:     #c8cdd6;
+    --text:        #1c2333;
+    --text-mid:    #4a5568;
+    --text-dim:    #8896a8;
+    --text-faint:  #b8c2cc;
+
+    /* Accent: muted slate-blue for Close, muted teal for Route */
+    --accent-l:        #3b5998;   /* close location — slate blue  */
+    --accent-l-light:  #edf0f7;
+    --accent-l-mid:    #c5cfe8;
+    --accent-r:        #217a6b;   /* make route — teal            */
+    --accent-r-light:  #e8f4f2;
+    --accent-r-mid:    #b2d8d2;
+
+    /* Highlight colors for map markers */
+    --hl-src:   #2563eb;   /* selected source: blue  */
+    --hl-near:  #16a34a;   /* nearest 5: green       */
+
+    /* Warn/flash */
+    --flash-bg: #fef9c3;
+    --flash-bd: #ca8a04;
+
+    --radius:    6px;
+    --radius-sm: 4px;
+    --shadow:    0 1px 4px rgba(0,0,0,.08), 0 0 1px rgba(0,0,0,.06);
+    --shadow-md: 0 2px 8px rgba(0,0,0,.10), 0 0 2px rgba(0,0,0,.05);
+  }
+
+  *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
+
+  body {
+    display: flex;
+    height: 100vh;
+    overflow: hidden;
+    font-family: 'Inter', system-ui, sans-serif;
+    background: var(--bg);
+    color: var(--text);
+    font-size: 13px;
+  }
+
+  /* ── Sidebar shell ───────────────────────────────────── */
+  .sidebar {
+    width: 290px;
+    min-width: 290px;
+    height: 100vh;
+    display: flex;
+    flex-direction: column;
+    background: var(--surface);
+    border-top: none;
+    overflow: hidden;
+    transition: width .3s cubic-bezier(.4,0,.2,1),
+                min-width .3s cubic-bezier(.4,0,.2,1),
+                opacity .2s ease;
+  }
+  .sidebar.hidden { width: 0; min-width: 0; opacity: 0; pointer-events: none; }
+  #sb-left  { border-right: 1px solid var(--border); box-shadow: var(--shadow); }
+  #sb-right { border-left:  1px solid var(--border); box-shadow: var(--shadow); }
+
+  /* ── Header ──────────────────────────────────────────── */
+  .sb-head {
+    padding: 0;
+    flex-shrink: 0;
+  }
+  .sb-title-bar {
+    display: flex;
+    align-items: center;
+    gap: 9px;
+    padding: 14px 16px 10px;
+    border-bottom: 1px solid var(--border);
+  }
+  .sb-accent-bar {
+    width: 3px;
+    height: 18px;
+    border-radius: 2px;
+    flex-shrink: 0;
+  }
+  #sb-left  .sb-accent-bar { background: var(--accent-l); }
+  #sb-right .sb-accent-bar { background: var(--accent-r); }
+  .sb-head h2 {
+    font-size: 12px;
+    font-weight: 600;
+    letter-spacing: .4px;
+    text-transform: uppercase;
+    color: var(--text);
+  }
+  .sb-head p {
+    font-size: 11px;
+    color: var(--text-dim);
+    padding: 7px 16px 9px;
+    border-bottom: 1px solid var(--border);
+    background: var(--surface2);
+    line-height: 1.5;
+  }
+
+  /* ── Count strip ─────────────────────────────────────── */
+  .sb-count {
+    padding: 8px 16px;
+    border-bottom: 1px solid var(--border);
+    background: var(--surface2);
+    flex-shrink: 0;
+  }
+  .badge {
+    display: inline-block;
+    font-size: 10.5px;
+    font-weight: 600;
+    padding: 2px 9px;
+    border-radius: 20px;
+    letter-spacing: .2px;
+  }
+  #sb-left  .badge { background: var(--accent-l-light); color: var(--accent-l); border: 1px solid var(--accent-l-mid); }
+  #sb-right .badge { background: var(--accent-r-light); color: var(--accent-r); border: 1px solid var(--accent-r-mid); }
+
+  /* ── Scrollable list ─────────────────────────────────── */
+  .sb-list {
+    flex: 1;
+    overflow-y: auto;
+    padding: 10px;
+    display: flex;
+    flex-direction: column;
+    gap: 6px;
+    background: var(--bg);
+  }
+  .sb-list::-webkit-scrollbar { width: 5px; }
+  .sb-list::-webkit-scrollbar-track { background: transparent; }
+  .sb-list::-webkit-scrollbar-thumb { background: var(--border2); border-radius: 10px; }
+
+  /* ── Empty state ─────────────────────────────────────── */
+  .empty-msg {
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    justify-content: center;
+    padding: 40px 20px;
+    text-align: center;
+    color: var(--text-faint);
+    font-size: 12px;
+    line-height: 1.7;
+    gap: 8px;
+    margin-top: 10px;
+  }
+  .empty-icon {
+    width: 40px; height: 40px;
+    border-radius: 8px;
+    border: 1px solid var(--border);
+    background: var(--surface);
+    display: flex; align-items: center; justify-content: center;
+    font-size: 18px;
+    margin-bottom: 4px;
+  }
+
+  /* ── Cards ───────────────────────────────────────────── */
+  .loc-card {
+    background: var(--surface);
+    border: 1px solid var(--border);
+    border-radius: var(--radius);
+    padding: 10px 12px;
+    position: relative;
+    transition: border-color .15s, box-shadow .15s;
+    animation: cardIn .15s ease;
+    box-shadow: var(--shadow);
+  }
+  @keyframes cardIn {
+    from { opacity: 0; transform: translateY(4px); }
+    to   { opacity: 1; transform: translateY(0);   }
+  }
+  .loc-card:hover {
+    border-color: var(--border2);
+    box-shadow: var(--shadow-md);
+  }
+  .loc-card.source-card {
+    border-left: 3px solid var(--accent-l);
+    background: var(--surface);
+  }
+  .loc-card.flash {
+    background: var(--flash-bg) !important;
+    border-color: var(--flash-bd) !important;
+  }
+
+  /* Order badge — route mode */
+  .order-num {
+    position: absolute; top: 10px; right: 12px;
+    min-width: 20px; height: 20px;
+    border-radius: 4px;
+    background: var(--accent-r-light);
+    color: var(--accent-r);
+    border: 1px solid var(--accent-r-mid);
+    font-size: 10px; font-weight: 600;
+    display: flex; align-items: center; justify-content: center;
+    padding: 0 4px;
+  }
+
+  /* Delete button — route mode */
+  .del-btn {
+    position: absolute; top: 8px; right: 10px;
+    width: 22px; height: 22px;
+    border-radius: var(--radius-sm);
+    background: transparent;
+    border: 1px solid transparent;
+    color: var(--text-faint);
+    font-size: 15px; font-weight: 400;
+    cursor: pointer; line-height: 1;
+    display: flex; align-items: center; justify-content: center;
+    transition: background .12s, border-color .12s, color .12s;
+  }
+  .del-btn:hover {
+    background: #fef2f2;
+    border-color: #fca5a5;
+    color: #dc2626;
+  }
+
+  .card-name {
+    font-weight: 600;
+    font-size: 12.5px;
+    color: var(--text);
+    padding-right: 34px;
+    margin-bottom: 5px;
+    line-height: 1.4;
+  }
+  .card-tags {
+    display: flex;
+    gap: 4px;
+    margin-bottom: 5px;
+    flex-wrap: wrap;
+  }
+  .tag {
+    font-size: 10px; font-weight: 500;
+    padding: 1px 7px; border-radius: 20px;
+    border: 1px solid transparent;
+  }
+  .tag-emp  {
+    background: var(--accent-l-light);
+    color: var(--accent-l);
+    border-color: var(--accent-l-mid);
+  }
+  .tag-dist {
+    background: #f0fdf4;
+    color: #15803d;
+    border-color: #bbf7d0;
+  }
+  .tag-src  {
+    background: var(--accent-l-light);
+    color: var(--accent-l);
+    border-color: var(--accent-l-mid);
+    font-style: italic;
+  }
+  .card-addr {
+    font-size: 11px;
+    color: var(--text-dim);
+    line-height: 1.45;
+  }
+
+  /* ── Footer ──────────────────────────────────────────── */
+  .sb-foot {
+    padding: 10px;
+    border-top: 1px solid var(--border);
+    background: var(--surface);
+    flex-shrink: 0;
+  }
+  .clr-btn {
+    width: 100%;
+    padding: 8px 12px;
+    border-radius: var(--radius);
+    border: 1px solid var(--border2);
+    background: var(--surface2);
+    color: var(--text-mid);
+    font-family: inherit;
+    font-size: 11.5px;
+    font-weight: 500;
+    letter-spacing: .3px;
+    cursor: pointer;
+    transition: background .12s, border-color .12s, color .12s;
+    display: flex; align-items: center; justify-content: center; gap: 6px;
+  }
+  .clr-btn:hover {
+    background: #fef2f2;
+    border-color: #fca5a5;
+    color: #dc2626;
+  }
+  .clr-btn:active { opacity: .85; }
+
+  /* ── Map area ────────────────────────────────────────── */
+  #map-wrap { flex: 1; position: relative; min-width: 0; }
+  #map { width: 100%; height: 100%; }
+
+  /* ── Mode toggle bar ─────────────────────────────────── */
+  #mode-bar {
+    position: absolute;
+    bottom: 28px;
+    left: 50%;
+    transform: translateX(-50%);
+    display: flex;
+    z-index: 1000;
+    background: var(--surface);
+    border: 1px solid var(--border2);
+    border-radius: 8px;
+    padding: 4px;
+    gap: 4px;
+    box-shadow: var(--shadow-md);
+  }
+  .mode-btn {
+    padding: 9px 22px;
+    font-family: inherit;
+    font-size: 12px;
+    font-weight: 500;
+    letter-spacing: .3px;
+    cursor: pointer;
+    border: 1px solid transparent;
+    border-radius: 5px;
+    outline: none;
+    background: transparent;
+    color: var(--text-mid);
+    transition: background .15s, border-color .15s, color .15s;
+    display: flex; align-items: center; gap: 6px;
+    white-space: nowrap;
+  }
+  .mode-btn:hover {
+    background: var(--surface2);
+    color: var(--text);
+  }
+  #btn-close.active {
+    background: var(--accent-l-light);
+    border-color: var(--accent-l-mid);
+    color: var(--accent-l);
+    font-weight: 600;
+  }
+  #btn-route.active {
+    background: var(--accent-r-light);
+    border-color: var(--accent-r-mid);
+    color: var(--accent-r);
+    font-weight: 600;
+  }
+  /* Small indicator dot on the active button */
+  .mode-dot {
+    width: 6px; height: 6px;
+    border-radius: 50%;
+    flex-shrink: 0;
+  }
+  #btn-close .mode-dot { background: var(--accent-l); }
+  #btn-route .mode-dot { background: var(--accent-r); }
+
+  /* Leaflet tooltip override — clean, minimal */
+  .leaflet-tooltip {
+    background: var(--surface) !important;
+    border: 1px solid var(--border2) !important;
+    border-radius: var(--radius) !important;
+    box-shadow: var(--shadow-md) !important;
+    color: var(--text) !important;
+    font-family: 'Inter', system-ui, sans-serif !important;
+    font-size: 12px !important;
+    padding: 6px 10px !important;
+  }
+  .leaflet-tooltip::before { display: none !important; }
+</style>
+</head>
+<body>
+
+<!-- LEFT sidebar: Close Location results -->
+<div id="sb-left" class="sidebar">
+  <div class="sb-head">
+    <div class="sb-title-bar">
+      <div class="sb-accent-bar"></div>
+      <h2>Close Locations</h2>
+    </div>
+    <p>5 nearest locations to your selected marker</p>
+  </div>
+  <div class="sb-count">
+    <span id="close-badge" class="badge">0 shown</span>
+  </div>
+  <div id="close-list" class="sb-list">
+    <div class="empty-msg">
+      <span>Click any marker on the map<br>to find its 5 nearest neighbors.</span>
+    </div>
+  </div>
+  <div class="sb-foot">
+    <button class="clr-btn" id="btn-clear-close">&#10005;&nbsp; Clear Results</button>
+  </div>
+</div>
+
+<!-- MAP -->
+<div id="map-wrap">
+  <div id="map"></div>
+  <div id="mode-bar">
+    <button id="btn-close" class="mode-btn active">
+      <span class="mode-dot"></span> Close Location
+    </button>
+    <button id="btn-route" class="mode-btn">
+      <span class="mode-dot"></span> Make Route
+    </button>
+  </div>
+</div>
+
+<!-- RIGHT sidebar: Route list -->
+<div id="sb-right" class="sidebar hidden">
+  <div class="sb-head">
+    <div class="sb-title-bar">
+      <div class="sb-accent-bar"></div>
+      <h2>Route List</h2>
+    </div>
+    <p>Click markers on the map to add stops to your route.</p>
+  </div>
+  <div class="sb-count">
+    <span id="route-badge" class="badge">0 selected</span>
+  </div>
+  <div id="route-list" class="sb-list">
+    <div class="empty-msg">
+      <span>No stops added yet.<br>Click markers on the map<br>to build your route.</span>
+    </div>
+  </div>
+  <div class="sb-foot">
+    <button class="clr-btn" id="btn-clear-route">&#10005;&nbsp; Clear All</button>
+  </div>
+</div>
+
+<script>
+var MARKERS = [{"idx": 0, "lat": 32.922653, "lng": -79.869927, "retailer": "Refuel #55 (CHS)", "address": "1705 Clements Ferry Road, Charleston", "cluster": 3, "color": "#2f660a"}, {"idx": 1, "lat": 32.861797, "lng": -79.788224, "retailer": "Walmart #4384 (CHS)", "address": "3000 Proprietors Place, Mount Pleasant", "cluster": 3, "color": "#2f660a"}, {"idx": 2, "lat": 32.814082, "lng": -79.845456, "retailer": "Walmart #0632 (CHS)", "address": "1481 US Highway 17, Mount Pleasant", "cluster": 3, "color": "#2f660a"}, {"idx": 3, "lat": 32.839684, "lng": -79.857002, "retailer": "Harris Teeter #87 (CHS)", "address": "620 Long Point Road, Mount Pleasant", "cluster": 3, "color": "#2f660a"}, {"idx": 4, "lat": 32.803356, "lng": -80.017078, "retailer": "Total Wine & More #702-W Ashley (CHS)", "address": "1820-A Ashley River Road, Charleston", "cluster": 1, "color": "#0817a1"}, {"idx": 5, "lat": 32.897823, "lng": -79.821698, "retailer": "Harris Teeter #131 (CHS)", "address": "2035 Highway 41, Mount Pleasant", "cluster": 3, "color": "#2f660a"}, {"idx": 6, "lat": 32.83941, "lng": -79.816624, "retailer": "Harris Teeter #385 (CHS)", "address": "2195 Tea Planter Lane, Mount Pleasant", "cluster": 3, "color": "#2f660a"}, {"idx": 7, "lat": 33.058914, "lng": -80.150875, "retailer": "Harris Teeter #368 (CHS)", "address": "1269 Nexton Parkway, Summerville", "cluster": 2, "color": "#a30a23"}, {"idx": 8, "lat": 32.789941, "lng": -79.947564, "retailer": "Charlies Grocery-Spring St (CHS)", "address": "119 Spring Street, Charleston", "cluster": 1, "color": "#0817a1"}, {"idx": 9, "lat": 32.936631, "lng": -80.141339, "retailer": "Harris Teeter #363 (CHS)", "address": "9500 Dorchester Road, Summerville", "cluster": 2, "color": "#a30a23"}, {"idx": 10, "lat": 32.816014, "lng": -79.842754, "retailer": "Total Wine & More #705-Mt P (CHS)", "address": "1501 North Highway 17, Mount Pleasant", "cluster": 3, "color": "#2f660a"}, {"idx": 11, "lat": 32.795429, "lng": -79.859914, "retailer": "Harris Teeter #457 (CHS)", "address": "1220 Ben Sawyer Boulevard, Mount Pleasant", "cluster": 3, "color": "#2f660a"}, {"idx": 12, "lat": 32.82611, "lng": -80.085134, "retailer": "Harris Teeter #406 (CHS)", "address": "3865 West Ashley Circle, Charleston", "cluster": 1, "color": "#0817a1"}, {"idx": 13, "lat": 32.877594, "lng": -80.017694, "retailer": "Walmart #3367 (CHS)", "address": "4920 Centre Pointe Drive, North Charleston", "cluster": 1, "color": "#0817a1"}, {"idx": 14, "lat": 32.978899, "lng": -80.128284, "retailer": "Walmart Market #3713 (CHS)", "address": "3685 Ladson Road, Ladson", "cluster": 2, "color": "#a30a23"}, {"idx": 15, "lat": 32.65662, "lng": -79.938498, "retailer": "Bert's Supermarket (CHS)", "address": "202 East Ashley Boulevard, Folly Beach", "cluster": 1, "color": "#0817a1"}, {"idx": 16, "lat": 32.793105, "lng": -79.936467, "retailer": "Spar Reid Market (CHS)", "address": "51 Reid Street, Charleston", "cluster": 1, "color": "#0817a1"}, {"idx": 17, "lat": 32.881247, "lng": -79.977463, "retailer": "I Heart CBD - Park Circle (CHS)", "address": "1083 East Montague Avenue, North Charleston", "cluster": 1, "color": "#0817a1"}, {"idx": 18, "lat": 33.047022, "lng": -80.109492, "retailer": "Spinx #0355 (CHS)", "address": "2160 North Main Street, Summerville", "cluster": 2, "color": "#a30a23"}, {"idx": 19, "lat": 32.842704, "lng": -79.815348, "retailer": "Spinx #371 (CHS)", "address": "1130 Holliday Farms Boulevard, Mount Pleasant", "cluster": 3, "color": "#2f660a"}, {"idx": 20, "lat": 33.084188, "lng": -80.205706, "retailer": "Spinx #0364 (CHS)", "address": "845 Jedburg Road, Summerville", "cluster": 2, "color": "#a30a23"}, {"idx": 21, "lat": 33.153231, "lng": -80.05873, "retailer": "Spinx #0317 (CHS)", "address": "1558 South Live Oak Drive, Moncks Corner", "cluster": 2, "color": "#a30a23"}, {"idx": 22, "lat": 32.732826, "lng": -80.058195, "retailer": "Spinx #370 (CHS)", "address": "3285 Timberline Dr, Johns Island", "cluster": 1, "color": "#0817a1"}, {"idx": 23, "lat": 32.98994, "lng": -80.099995, "retailer": "Spinx #0356 (CHS)", "address": "9636 Highway 78, Ladson", "cluster": 2, "color": "#a30a23"}, {"idx": 24, "lat": 32.931077, "lng": -79.819805, "retailer": "Spinx #0341 (CHS)", "address": "2627 Highway 41, Charleston", "cluster": 3, "color": "#2f660a"}, {"idx": 25, "lat": 32.918506, "lng": -80.101197, "retailer": "Spinx #0352 (CHS)", "address": "4895 Ashley Phosphate Road, North Charleston", "cluster": 2, "color": "#a30a23"}, {"idx": 26, "lat": 32.97067, "lng": -80.208764, "retailer": "Spinx #0366 (CHS)", "address": "10696 Dorchester Road, Summerville", "cluster": 2, "color": "#a30a23"}, {"idx": 27, "lat": 32.920104, "lng": -80.030728, "retailer": "Spinx #0350 (CHS)", "address": "6899 Rivers Avenue, North Charleston", "cluster": 2, "color": "#a30a23"}, {"idx": 28, "lat": 32.953902, "lng": -80.164391, "retailer": "Lowe's Foods #270 (CHS)", "address": "10048 Dorchester Road, Summerville", "cluster": 2, "color": "#a30a23"}, {"idx": 29, "lat": 32.842361, "lng": -80.059423, "retailer": "Lowe's Foods #278 (CHS)", "address": "3125 Bees Ferry Road, Charleston", "cluster": 1, "color": "#0817a1"}, {"idx": 30, "lat": 32.93412, "lng": -79.999535, "retailer": "Lowe's Foods #279 (CHS)", "address": "1000 Tanner Ford Boulevard, Hanahan", "cluster": 2, "color": "#a30a23"}, {"idx": 31, "lat": 32.720764, "lng": -80.080736, "retailer": "Lowe's Foods #293 (CHS)", "address": "3575 Maybank Highway, Johns Island", "cluster": 1, "color": "#0817a1"}, {"idx": 32, "lat": 32.89165, "lng": -79.985853, "retailer": "Jadoon's Market (CHS)", "address": "5137 North Rhett Avenue, North Charleston", "cluster": 1, "color": "#0817a1"}, {"idx": 33, "lat": 32.864346, "lng": -79.904589, "retailer": "Refuel #18 (CHS)", "address": "860 Island Park Drive, Charleston", "cluster": 3, "color": "#2f660a"}, {"idx": 34, "lat": 33.041257, "lng": -80.248144, "retailer": "Spinx #0353 (CHS)", "address": "1310 Orangeburg Road, Summerville", "cluster": 2, "color": "#a30a23"}, {"idx": 35, "lat": 32.864774, "lng": -80.013695, "retailer": "Spinx #0351 (CHS)", "address": "3109 West Montague Avenue, North Charleston", "cluster": 1, "color": "#0817a1"}, {"idx": 36, "lat": 33.023093, "lng": -80.165556, "retailer": "Spinx #0359 (CHS)", "address": "360 East 5th North Street, Summerville", "cluster": 2, "color": "#a30a23"}, {"idx": 37, "lat": 32.906035, "lng": -79.822929, "retailer": "Lowe's Foods #265 (CHS)", "address": "2110 SC Highway 41, Mount Pleasant", "cluster": 3, "color": "#2f660a"}, {"idx": 38, "lat": 32.830381, "lng": -79.831468, "retailer": "Towne Centre Market - Mt P (CHS)", "address": "1865 Highway 17 North, Mount Pleasant", "cluster": 3, "color": "#2f660a"}, {"idx": 39, "lat": 33.091696, "lng": -80.0322, "retailer": "Spinx #0358 (CHS)", "address": "2801 US-52, Moncks Corner", "cluster": 2, "color": "#a30a23"}, {"idx": 40, "lat": 32.912866, "lng": -80.109221, "retailer": "Publix #0824 (CHS)", "address": "8409 Dorchester Road, North Charleston", "cluster": 2, "color": "#a30a23"}, {"idx": 41, "lat": 32.921677, "lng": -79.871321, "retailer": "Publix #1646 (CHS)", "address": "730 Hopewell Drive, Charleston", "cluster": 3, "color": "#2f660a"}, {"idx": 42, "lat": 32.929084, "lng": -79.71285, "retailer": "Sewee Outpost (CHS)", "address": "4853 North Highway 17, Awendaw", "cluster": 3, "color": "#2f660a"}, {"idx": 43, "lat": 33.060315, "lng": -80.153801, "retailer": "Publix #1866 (CHS)", "address": "1274 Nexton Parkway, Summerville", "cluster": 2, "color": "#a30a23"}, {"idx": 44, "lat": 32.714256, "lng": -79.96682, "retailer": "Publix #1645 (CHS)", "address": "1411 Folly Road Suite 100, Charleston", "cluster": 1, "color": "#0817a1"}, {"idx": 45, "lat": 33.062762, "lng": -80.096189, "retailer": "Publix #2038 (CHS)", "address": "2700 North Main Street, Summerville", "cluster": 2, "color": "#a30a23"}, {"idx": 46, "lat": 33.011712, "lng": -80.234942, "retailer": "Publix #1120 (CHS)", "address": "1585 Central Avenue, Summerville", "cluster": 2, "color": "#a30a23"}, {"idx": 47, "lat": 32.813839, "lng": -79.867313, "retailer": "Publix #0449 (CHS)", "address": "1000 Johnnie Dodds Boulevard, Mount Pleasant", "cluster": 3, "color": "#2f660a"}, {"idx": 48, "lat": 32.970138, "lng": -80.003194, "retailer": "Walmart Market #3646 (CHS)", "address": "1635 Red Bank Road, Goose Creek", "cluster": 2, "color": "#a30a23"}, {"idx": 49, "lat": 32.98124, "lng": -80.126642, "retailer": "Spinx #0354 (CHS)", "address": "3665 Ladson Road, Ladson", "cluster": 2, "color": "#a30a23"}, {"idx": 50, "lat": 32.80489, "lng": -80.111841, "retailer": "Publix #1145 (CHS)", "address": "3642 Savannah Highway, Johns Island", "cluster": 1, "color": "#0817a1"}, {"idx": 51, "lat": 32.874079, "lng": -79.779347, "retailer": "Publix #1081 (CHS)", "address": "1125 Park West Boulevard, Mount Pleasant", "cluster": 3, "color": "#2f660a"}, {"idx": 52, "lat": 32.863678, "lng": -79.90366, "retailer": "Publix #2090 (CHS)", "address": "162 Seven Farms Drive, Charleston", "cluster": 3, "color": "#2f660a"}, {"idx": 53, "lat": 32.966816, "lng": -80.166093, "retailer": "Publix #0483 (CHS)", "address": "1575 Old Trolley Road, Summerville", "cluster": 2, "color": "#a30a23"}, {"idx": 54, "lat": 33.089787, "lng": -80.030304, "retailer": "Publix #1775 (CHS)", "address": "2830 Highway 52, Moncks Corner", "cluster": 2, "color": "#a30a23"}, {"idx": 55, "lat": 32.79162, "lng": -79.854302, "retailer": "Publix #1055 (CHS)", "address": "1435 Ben Sawyer Boulevard, Mount Pleasant", "cluster": 3, "color": "#2f660a"}, {"idx": 56, "lat": 33.033956, "lng": -80.183941, "retailer": "Spinx #0378 (CHS)", "address": "930 West 5th North Street, Summerville", "cluster": 2, "color": "#a30a23"}, {"idx": 57, "lat": 32.967347, "lng": -80.203928, "retailer": "Walmart Market #6174 (CHS)", "address": "10635 Dorchester Road, Summerville", "cluster": 2, "color": "#a30a23"}, {"idx": 58, "lat": 32.753634, "lng": -79.970954, "retailer": "Publix #0633 (CHS)", "address": "520 Folly Road, Charleston", "cluster": 1, "color": "#0817a1"}, {"idx": 59, "lat": 32.813269, "lng": -79.997695, "retailer": "Publix #0472 (CHS)", "address": "1401 Sam Rittenberg Boulevard, Charleston", "cluster": 1, "color": "#0817a1"}, {"idx": 60, "lat": 32.786855, "lng": -79.95705, "retailer": "Publix #1599 (CHS)", "address": "10 Westedge Street, Charleston", "cluster": 1, "color": "#0817a1"}, {"idx": 61, "lat": 33.031712, "lng": -80.16282, "retailer": "Earth Fare #205 - Summerville (CHS)", "address": "1101 North Main Street, Summerville", "cluster": 2, "color": "#a30a23"}, {"idx": 62, "lat": 32.821683, "lng": -80.081426, "retailer": "Walmart #1748 (CHS)", "address": "3951 West Ashley Circle, Charleston", "cluster": 1, "color": "#0817a1"}, {"idx": 63, "lat": 32.763049, "lng": -79.836577, "retailer": "Refuel #50 (CHS)", "address": "2220 Middle Street, Sullivans Island", "cluster": 3, "color": "#2f660a"}, {"idx": 64, "lat": 33.10681, "lng": -80.125941, "retailer": "Publix #1266 (CHS)", "address": "1724 State Road, Summerville", "cluster": 2, "color": "#a30a23"}, {"idx": 65, "lat": 32.819089, "lng": -80.068082, "retailer": "Spinx #368 (CHS)", "address": "4000 Wildcat Boulevard, Charleston", "cluster": 1, "color": "#0817a1"}, {"idx": 66, "lat": 32.861477, "lng": -79.908076, "retailer": "Circle K #2723882 (CHS)", "address": "901 Island Park Drive, Charleston", "cluster": 3, "color": "#2f660a"}, {"idx": 67, "lat": 32.999586, "lng": -80.185617, "retailer": "Harris Teeter #355 (CHS)", "address": "680 Bacons Bridge Road, Summerville", "cluster": 2, "color": "#a30a23"}, {"idx": 68, "lat": 33.025963, "lng": -80.174132, "retailer": "Piggly Wiggly #299 (CHS)", "address": "404 North Cedar Street, Summerville", "cluster": 2, "color": "#a30a23"}, {"idx": 69, "lat": 32.95018, "lng": -80.155164, "retailer": "Walmart #0628 (CHS)", "address": "9880 Dorchester Road, Summerville", "cluster": 2, "color": "#a30a23"}, {"idx": 70, "lat": 33.210637, "lng": -79.985603, "retailer": "Walmart #1146 (CHS)", "address": "511 North Highway 52, Moncks Corner", "cluster": 2, "color": "#a30a23"}, {"idx": 71, "lat": 32.685862, "lng": -79.961027, "retailer": "Harris Teeter #453 (CHS)", "address": "1985 Folly Road, Charleston", "cluster": 1, "color": "#0817a1"}, {"idx": 72, "lat": 32.790925, "lng": -80.029981, "retailer": "Piggly Wiggly #199 (CHS)", "address": "630 Skylark Drive, Charleston", "cluster": 1, "color": "#0817a1"}, {"idx": 73, "lat": 32.78246, "lng": -79.991036, "retailer": "Harris Teeter #365 (CHS)", "address": "975 Savannah Highway, Charleston", "cluster": 1, "color": "#0817a1"}, {"idx": 74, "lat": 33.08944, "lng": -80.0796, "retailer": "Parkers #121 (CHS)", "address": "3018 South Live Oak Drive, Moncks Corner", "cluster": 2, "color": "#a30a23"}, {"idx": 75, "lat": 33.056144, "lng": -80.152041, "retailer": "Refuel #48 (CHS)", "address": "605 Brighton Park Boulevard, Summerville", "cluster": 2, "color": "#a30a23"}, {"idx": 76, "lat": 32.801986, "lng": -79.891771, "retailer": "Harris Teeter #19 (CHS)", "address": "920 Houston Northcutt Boulevard, Mount Pleasant", "cluster": 3, "color": "#2f660a"}, {"idx": 77, "lat": 32.802526, "lng": -80.019691, "retailer": "Harris Teeter #410 (CHS)", "address": "1812 Sam Rittenberg Boulevard, Charleston", "cluster": 1, "color": "#0817a1"}, {"idx": 78, "lat": 32.746308, "lng": -79.971944, "retailer": "Harris Teeter #28 (CHS)", "address": "675 Folly Road, Charleston", "cluster": 1, "color": "#0817a1"}, {"idx": 79, "lat": 33.096336, "lng": -80.031388, "retailer": "Parkers #81 (CHS)", "address": "106 Foxbank Plantation Boulevard, Moncks Corner", "cluster": 2, "color": "#a30a23"}, {"idx": 80, "lat": 32.761902, "lng": -79.977026, "retailer": "Harris Teeter #455 (CHS)", "address": "1739 Maybank Highway, Charleston", "cluster": 1, "color": "#0817a1"}, {"idx": 81, "lat": 32.785119, "lng": -80.001894, "retailer": "V Go #21 - Savannah Hwy (CHS)", "address": "1406 Savannah Highway, Charleston", "cluster": 1, "color": "#0817a1"}, {"idx": 82, "lat": 32.969175, "lng": -80.011552, "retailer": "Food Lion #0410 (CHS)", "address": "1316 Red Bank Road, Goose Creek", "cluster": 2, "color": "#a30a23"}, {"idx": 83, "lat": 32.744996, "lng": -80.038179, "retailer": "Food Lion #1499 (CHS)", "address": "2770 Maybank Highway, Johns Island", "cluster": 1, "color": "#0817a1"}, {"idx": 84, "lat": 32.811861, "lng": -79.852392, "retailer": "Fresh Market #260 (CHS)", "address": "1118 Bowman Road, Mount Pleasant", "cluster": 3, "color": "#2f660a"}, {"idx": 85, "lat": 32.606859, "lng": -80.147828, "retailer": "Harris Teeter #451 (CHS)", "address": "515 Freshfields Drive, Johns Island", "cluster": 1, "color": "#0817a1"}, {"idx": 86, "lat": 32.819443, "lng": -79.992981, "retailer": "Parkers #79 (CHS)", "address": "1140 Sam Rittenberg Boulevard, Charleston", "cluster": 1, "color": "#0817a1"}, {"idx": 87, "lat": 32.741825, "lng": -79.936152, "retailer": "Harris Teeter #456 (CHS)", "address": "1005 Harbor View Road, Charleston", "cluster": 1, "color": "#0817a1"}, {"idx": 88, "lat": 32.784528, "lng": -79.928375, "retailer": "Harris Teeter #277 (CHS)", "address": "290 East Bay Street, Charleston", "cluster": 1, "color": "#0817a1"}, {"idx": 89, "lat": 33.105035, "lng": -80.126416, "retailer": "Parkers #77 (CHS)", "address": "1111 Cane Bay Boulevard, Summerville", "cluster": 2, "color": "#a30a23"}, {"idx": 90, "lat": 32.789545, "lng": -79.787191, "retailer": "Harris Teeter #452 (CHS)", "address": "1513 Palm Boulevard, Isle Of Palms", "cluster": 3, "color": "#2f660a"}, {"idx": 91, "lat": 33.008021, "lng": -80.047228, "retailer": "Walmart Market #3899 (CHS)", "address": "215 Saint James Avenue, Goose Creek", "cluster": 2, "color": "#a30a23"}, {"idx": 92, "lat": 32.779111, "lng": -79.949875, "retailer": "The Sea Store (CHS)", "address": "7 Lockwood Drive, Charleston", "cluster": 1, "color": "#0817a1"}, {"idx": 93, "lat": 32.787605, "lng": -79.788587, "retailer": "Circle K #2720492 (CHS)", "address": "1206 Palm Boulevard, Isle Of Palms", "cluster": 3, "color": "#2f660a"}, {"idx": 94, "lat": 32.720536, "lng": -79.967672, "retailer": "Walmart #2348 (CHS)", "address": "1231 Folly Road, Charleston", "cluster": 1, "color": "#0817a1"}, {"idx": 95, "lat": 33.209197, "lng": -79.980096, "retailer": "Food Lion #1378 (CHS)", "address": "608 North Highway 52, Moncks Corner", "cluster": 2, "color": "#a30a23"}];
+var BOXES   = [{"color": "#0817a1", "bounds": [[32.606859, -80.147828], [32.89165, -79.928375]]}, {"color": "#a30a23", "bounds": [[32.912866, -80.248144], [33.210637, -79.980096]]}, {"color": "#2f660a", "bounds": [[32.763049, -79.908076], [32.931077, -79.71285]]}];
+var CENTER  = [32.89515319791666,-80.00526294791666];
+
+// ── Map init ───────────────────────────────────────────────────────────────
+var map = L.map('map', { zoomControl: true }).setView(CENTER, 12);
+L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png', {
+  attribution: '&copy; <a href="https://openstreetmap.org">OpenStreetMap</a>',
+  maxZoom: 19
+}).addTo(map);
+
+// Subtle cluster boundary boxes
+BOXES.forEach(function(b) {
+  L.rectangle(b.bounds, {
+    color: b.color, weight: 1.5, opacity: 0.35,
+    fill: true, fillColor: b.color, fillOpacity: 0.04,
+    dashArray: '4 4'
+  }).addTo(map);
+});
+
+// ── App state ──────────────────────────────────────────────────────────────
+var mode           = 'close';
+var layerMap       = {};
+var highlightedIdx = [];
+var routeSel       = {};
+var routeOrder     = [];
+
+// ── Draw markers ───────────────────────────────────────────────────────────
+MARKERS.forEach(function(m) {
+  var circle = L.circleMarker([m.lat, m.lng], {
+    radius: 7,
+    color: '#ffffff',
+    weight: 1.5,
+    fillColor: m.color,
+    fillOpacity: 0.85
+  });
+  circle.bindTooltip(
+    '<b>' + esc(m.retailer) + '</b><br>' +
+    '<span style="color:#6b7280">Employee ' + m.cluster + '&nbsp;&nbsp;&middot;&nbsp;&nbsp;' + esc(m.address) + '</span>',
+    { direction: 'top', offset: [0, -9], sticky: false }
+  );
+  circle.on('click', function() { onMarkerClick(m); });
+  circle.addTo(map);
+  layerMap[m.idx] = circle;
+});
+
+// ── Mode switching ─────────────────────────────────────────────────────────
+document.getElementById('btn-close').addEventListener('click', function() { setMode('close'); });
+document.getElementById('btn-route').addEventListener('click', function() { setMode('route'); });
+
+function setMode(m) {
+  mode = m;
+  document.getElementById('btn-close').classList.toggle('active', m === 'close');
+  document.getElementById('btn-route').classList.toggle('active', m === 'route');
+  document.getElementById('sb-left').classList.toggle('hidden',   m !== 'close');
+  document.getElementById('sb-right').classList.toggle('hidden',  m !== 'route');
+  if (m !== 'close') clearHighlights();
+}
+
+// ── Haversine distance ─────────────────────────────────────────────────────
+function hvs(lat1, lng1, lat2, lng2) {
+  var R = 6371;
+  var dLat = (lat2 - lat1) * Math.PI / 180;
+  var dLng = (lng2 - lng1) * Math.PI / 180;
+  var a = Math.sin(dLat/2) * Math.sin(dLat/2) +
+          Math.cos(lat1 * Math.PI/180) * Math.cos(lat2 * Math.PI/180) *
+          Math.sin(dLng/2) * Math.sin(dLng/2);
+  return R * 2 * Math.atan2(Math.sqrt(a), Math.sqrt(1 - a));
+}
+
+// ── Highlight helpers ──────────────────────────────────────────────────────
+function clearHighlights() {
+  highlightedIdx.forEach(function(idx) {
+    var m = MARKERS.find(function(x) { return x.idx === idx; });
+    if (m && layerMap[idx]) {
+      layerMap[idx].setStyle({ radius: 7, color: '#ffffff', weight: 1.5, fillColor: m.color, fillOpacity: 0.85 });
+    }
+  });
+  highlightedIdx = [];
+}
+
+// ── Click dispatch ─────────────────────────────────────────────────────────
+function onMarkerClick(m) {
+  if (mode === 'close') doClose(m);
+  else doRoute(m);
+}
+
+// ── CLOSE LOCATION ─────────────────────────────────────────────────────────
+function doClose(src) {
+  clearHighlights();
+
+  var dists = MARKERS
+    .filter(function(m) { return m.idx !== src.idx; })
+    .map(function(m) { return { m: m, d: hvs(src.lat, src.lng, m.lat, m.lng) }; })
+    .sort(function(a, b) { return a.d - b.d; });
+  var top5 = dists.slice(0, 5);
+
+  // Highlight source: filled blue circle with white border
+  layerMap[src.idx].setStyle({ radius: 11, color: '#1d4ed8', weight: 2.5, fillColor: '#3b82f6', fillOpacity: 1 });
+  highlightedIdx.push(src.idx);
+
+  // Highlight nearest 5: filled green
+  top5.forEach(function(e) {
+    layerMap[e.m.idx].setStyle({ radius: 9, color: '#000000', weight: 2, fillColor: '#ffee30', fillOpacity: 1 });
+    highlightedIdx.push(e.m.idx);
+  });
+
+  // Populate sidebar
+  var list = document.getElementById('close-list');
+  list.innerHTML = '';
+  list.appendChild(buildCloseCard(src, null, true));
+  top5.forEach(function(e) {
+    var ds = e.d < 1
+      ? (e.d * 1000).toFixed(0) + ' m'
+      : e.d.toFixed(2) + ' km';
+    list.appendChild(buildCloseCard(e.m, ds, false));
+  });
+  document.getElementById('close-badge').textContent = '5 shown';
+}
+
+function buildCloseCard(m, distStr, isSource) {
+  var card = document.createElement('div');
+  card.className = 'loc-card' + (isSource ? ' source-card' : '');
+  var tags = '<span class="tag tag-emp">Employee ' + m.cluster + '</span>';
+  if (distStr)  tags += '<span class="tag tag-dist">' + distStr + ' away</span>';
+  if (isSource) tags += '<span class="tag tag-src">Selected</span>';
+  card.innerHTML =
+    '<div class="card-name">' + esc(m.retailer) + '</div>' +
+    '<div class="card-tags">' + tags + '</div>' +
+    '<div class="card-addr">' + esc(m.address) + '</div>';
+  return card;
+}
+
+document.getElementById('btn-clear-close').addEventListener('click', function() {
+  clearHighlights();
+  document.getElementById('close-list').innerHTML =
+    '<div class="empty-msg">' +
+    '<span>Click any marker on the map<br>to find its 5 nearest neighbors.</span>' +
+    '</div>';
+  document.getElementById('close-badge').textContent = '0 shown';
+});
+
+// ── MAKE ROUTE ─────────────────────────────────────────────────────────────
+function doRoute(m) {
+  var key = String(m.idx);
+
+  if (routeSel[key]) {
+    var el = document.getElementById('rc-' + key);
+    if (el) {
+      el.classList.add('flash');
+      setTimeout(function() { el.classList.remove('flash'); }, 700);
+    }
+    return;
+  }
+
+  routeSel[key] = m;
+  routeOrder.push(key);
+
+  var emp = document.getElementById('route-list').querySelector('.empty-msg');
+  if (emp) emp.remove();
+
+  // Build card using DOM methods (no inline onclick — reliable across all browsers)
+  var card = document.createElement('div');
+  card.className = 'loc-card';
+  card.id = 'rc-' + key;
+
+  var orderNum = document.createElement('div');
+  orderNum.className = 'order-num';
+  orderNum.textContent = routeOrder.length;
+
+  var delBtn = document.createElement('button');
+  delBtn.className = 'del-btn';
+  delBtn.title = 'Remove stop';
+  delBtn.innerHTML = '&times;';
+  delBtn.addEventListener('click', function(e) {
+    e.stopPropagation();
+    removeRoute(key);
+  });
+
+  var nameEl = document.createElement('div');
+  nameEl.className = 'card-name';
+  nameEl.textContent = m.retailer;
+  nameEl.style.paddingRight = '36px';
+
+  var tagsEl = document.createElement('div');
+  tagsEl.className = 'card-tags';
+  tagsEl.innerHTML = '<span class="tag tag-emp">Employee ' + m.cluster + '</span>';
+
+  var addrEl = document.createElement('div');
+  addrEl.className = 'card-addr';
+  addrEl.textContent = m.address;
+
+  card.appendChild(orderNum);
+  card.appendChild(delBtn);
+  card.appendChild(nameEl);
+  card.appendChild(tagsEl);
+  card.appendChild(addrEl);
+
+  document.getElementById('route-list').appendChild(card);
+  updateRouteBadge();
+}
+
+function removeRoute(key) {
+  if (!routeSel[key]) return;
+  delete routeSel[key];
+  routeOrder = routeOrder.filter(function(k) { return k !== key; });
+
+  var el = document.getElementById('rc-' + key);
+  if (el) {
+    el.style.transition = 'opacity .12s ease, transform .12s ease';
+    el.style.opacity = '0';
+    el.style.transform = 'translateX(10px)';
+    setTimeout(function() {
+      if (el.parentNode) el.parentNode.removeChild(el);
+      renumberCards();
+    }, 130);
+  }
+
+  if (routeOrder.length === 0) {
+    setTimeout(function() {
+      if (routeOrder.length === 0) {
+        document.getElementById('route-list').innerHTML =
+          '<div class="empty-msg">' +
+          '<span>No stops added yet.<br>Click markers on the map<br>to build your route.</span>' +
+          '</div>';
+      }
+    }, 150);
+  }
+  updateRouteBadge();
+}
+
+function renumberCards() {
+  routeOrder.forEach(function(key, i) {
+    var el = document.getElementById('rc-' + key);
+    if (el) {
+      var num = el.querySelector('.order-num');
+      if (num) num.textContent = i + 1;
+    }
+  });
+}
+
+document.getElementById('btn-clear-route').addEventListener('click', function() {
+  routeSel   = {};
+  routeOrder = [];
+  document.getElementById('route-list').innerHTML =
+    '<div class="empty-msg">' +
+    '<span>No stops added yet.<br>Click markers on the map<br>to build your route.</span>' +
+    '</div>';
+  updateRouteBadge();
+});
+
+function updateRouteBadge() {
+  document.getElementById('route-badge').textContent = routeOrder.length + ' selected';
+}
+
+function esc(s) {
+  return String(s)
+    .replace(/&/g, '&amp;').replace(/</g, '&lt;')
+    .replace(/>/g, '&gt;').replace(/"/g, '&quot;');
+}
+
+setMode('close');
+</script>
+</body>
+</html>
