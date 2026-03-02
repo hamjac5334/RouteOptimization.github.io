@@ -100,7 +100,7 @@ def compute_route_order(coords):
 num_clusters = int(input("Enter number of clusters (employees): "))
 
 # ── Load ──────────────────────────────────────────────────────────────────────
-df = pd.read_csv("CopyofSales_By_Brand_26_124_Month-5_geocodio_b82728e2fe066ceda13ba3e94e27b13649e02571.csv")
+df = pd.read_csv("OnPremise_geocodio_d75797a8d3955d2cd90df3ee2c4e0099e0506d37.csv")
 df = df.rename(columns={"Geocodio Latitude": "Latitude", "Geocodio Longitude": "Longitude"})
 df = df.dropna(subset=["Latitude", "Longitude"]).reset_index(drop=True)
 print("Data loaded. Total locations:", len(df))
@@ -832,7 +832,7 @@ setMode('close');
 </body>
 </html>"""
 
-with open("RouteOptimization_Clustered_Map.html", "w", encoding="utf-8") as f:
+with open("RouteOptimization_OnPremise_Map.html", "w", encoding="utf-8") as f:
     f.write(html)
 
-print("✓ HTML map with supplier filter panel saved to RouteOptimization_Clustered_Map.html!")
+print("✓ HTML map with supplier filter panel saved to RouteOptimization_OnPremise_Map.html!")
