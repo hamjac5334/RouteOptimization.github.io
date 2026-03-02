@@ -1,0 +1,662 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width,initial-scale=1.0">
+<title>Route Optimization</title>
+<link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css"/>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600&display=swap" rel="stylesheet">
+<script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js"></script>
+<style>
+  :root {
+    --bg:          #f4f5f7;
+    --surface:     #ffffff;
+    --surface2:    #f9fafb;
+    --border:      #dde1e7;
+    --border2:     #c8cdd6;
+    --text:        #1c2333;
+    --text-mid:    #4a5568;
+    --text-dim:    #8896a8;
+    --text-faint:  #b8c2cc;
+    --accent-l:        #3b5998;
+    --accent-l-light:  #edf0f7;
+    --accent-l-mid:    #c5cfe8;
+    --accent-r:        #217a6b;
+    --accent-r-light:  #e8f4f2;
+    --accent-r-mid:    #b2d8d2;
+    --flash-bg: #fef9c3;
+    --flash-bd: #ca8a04;
+    --radius:    6px;
+    --radius-sm: 4px;
+    --shadow:    0 1px 4px rgba(0,0,0,.08), 0 0 1px rgba(0,0,0,.06);
+    --shadow-md: 0 2px 8px rgba(0,0,0,.10), 0 0 2px rgba(0,0,0,.05);
+  }
+  *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
+  body {
+    display: flex; height: 100vh; overflow: hidden;
+    font-family: 'Inter', system-ui, sans-serif;
+    background: var(--bg); color: var(--text); font-size: 13px;
+  }
+  .sidebar {
+    width: 290px; min-width: 290px; height: 100vh;
+    display: flex; flex-direction: column;
+    background: var(--surface); overflow: hidden;
+    transition: width .3s cubic-bezier(.4,0,.2,1),
+                min-width .3s cubic-bezier(.4,0,.2,1),
+                opacity .2s ease;
+  }
+  .sidebar.hidden { width: 0; min-width: 0; opacity: 0; pointer-events: none; }
+  #sb-left  { border-right: 1px solid var(--border); box-shadow: var(--shadow); }
+  #sb-right { border-left:  1px solid var(--border); box-shadow: var(--shadow); }
+  .sb-head { padding: 0; flex-shrink: 0; }
+  .sb-title-bar {
+    display: flex; align-items: center; gap: 9px;
+    padding: 14px 16px 10px; border-bottom: 1px solid var(--border);
+  }
+  .sb-accent-bar { width: 3px; height: 18px; border-radius: 2px; flex-shrink: 0; }
+  #sb-left  .sb-accent-bar { background: var(--accent-l); }
+  #sb-right .sb-accent-bar { background: var(--accent-r); }
+  .sb-head h2 {
+    font-size: 12px; font-weight: 600; letter-spacing: .4px;
+    text-transform: uppercase; color: var(--text);
+  }
+  .sb-head p {
+    font-size: 11px; color: var(--text-dim); padding: 7px 16px 9px;
+    border-bottom: 1px solid var(--border); background: var(--surface2); line-height: 1.5;
+  }
+  .sb-count {
+    padding: 8px 16px; border-bottom: 1px solid var(--border);
+    background: var(--surface2); flex-shrink: 0;
+  }
+  .badge {
+    display: inline-block; font-size: 10.5px; font-weight: 600;
+    padding: 2px 9px; border-radius: 20px; letter-spacing: .2px;
+  }
+  #sb-left  .badge { background: var(--accent-l-light); color: var(--accent-l); border: 1px solid var(--accent-l-mid); }
+  #sb-right .badge { background: var(--accent-r-light); color: var(--accent-r); border: 1px solid var(--accent-r-mid); }
+  .sb-list {
+    flex: 1; overflow-y: auto; padding: 10px;
+    display: flex; flex-direction: column; gap: 6px; background: var(--bg);
+  }
+  .sb-list::-webkit-scrollbar { width: 5px; }
+  .sb-list::-webkit-scrollbar-track { background: transparent; }
+  .sb-list::-webkit-scrollbar-thumb { background: var(--border2); border-radius: 10px; }
+  .empty-msg {
+    display: flex; flex-direction: column; align-items: center;
+    justify-content: center; padding: 40px 20px; text-align: center;
+    color: var(--text-faint); font-size: 12px; line-height: 1.7; gap: 8px; margin-top: 10px;
+  }
+  .loc-card {
+    background: var(--surface); border: 1px solid var(--border);
+    border-radius: var(--radius); padding: 10px 12px; position: relative;
+    transition: border-color .15s, box-shadow .15s;
+    animation: cardIn .15s ease; box-shadow: var(--shadow);
+  }
+  @keyframes cardIn {
+    from { opacity: 0; transform: translateY(4px); }
+    to   { opacity: 1; transform: translateY(0); }
+  }
+  .loc-card:hover { border-color: var(--border2); box-shadow: var(--shadow-md); }
+  .loc-card.source-card { border-left: 3px solid var(--accent-l); }
+  .loc-card.flash { background: var(--flash-bg) !important; border-color: var(--flash-bd) !important; }
+  .loc-card.optimized { border-left: 3px solid var(--accent-r); }
+  .order-num {
+    position: absolute; top: 10px; right: 12px;
+    min-width: 20px; height: 20px; border-radius: 4px;
+    background: var(--accent-r-light); color: var(--accent-r);
+    border: 1px solid var(--accent-r-mid);
+    font-size: 10px; font-weight: 600;
+    display: flex; align-items: center; justify-content: center; padding: 0 4px;
+  }
+  .del-btn {
+    position: absolute; top: 8px; right: 10px;
+    width: 22px; height: 22px; border-radius: var(--radius-sm);
+    background: transparent; border: 1px solid transparent;
+    color: var(--text-faint); font-size: 15px; cursor: pointer; line-height: 1;
+    display: flex; align-items: center; justify-content: center;
+    transition: background .12s, border-color .12s, color .12s;
+  }
+  .del-btn:hover { background: #fef2f2; border-color: #fca5a5; color: #dc2626; }
+  .card-name {
+    font-weight: 600; font-size: 12.5px; color: var(--text);
+    padding-right: 34px; margin-bottom: 5px; line-height: 1.4;
+  }
+  .card-tags { display: flex; gap: 4px; margin-bottom: 5px; flex-wrap: wrap; }
+  .tag { font-size: 10px; font-weight: 500; padding: 1px 7px; border-radius: 20px; border: 1px solid transparent; }
+  .tag-emp  { background: var(--accent-l-light); color: var(--accent-l); border-color: var(--accent-l-mid); }
+  .tag-dist { background: #f0fdf4; color: #15803d; border-color: #bbf7d0; }
+  .tag-src  { background: var(--accent-l-light); color: var(--accent-l); border-color: var(--accent-l-mid); font-style: italic; }
+  .tag-opt  { background: #fdf4ff; color: #7e22ce; border-color: #e9d5ff; }
+  .card-addr { font-size: 11px; color: var(--text-dim); line-height: 1.45; }
+  .sb-foot {
+    padding: 10px; border-top: 1px solid var(--border);
+    background: var(--surface); flex-shrink: 0;
+    display: flex; flex-direction: column; gap: 6px;
+  }
+  .clr-btn {
+    width: 100%; padding: 8px 12px; border-radius: var(--radius);
+    border: 1px solid var(--border2); background: var(--surface2);
+    color: var(--text-mid); font-family: inherit; font-size: 11.5px;
+    font-weight: 500; cursor: pointer;
+    transition: background .12s, border-color .12s, color .12s;
+    display: flex; align-items: center; justify-content: center; gap: 6px;
+  }
+  .clr-btn:hover { background: #fef2f2; border-color: #fca5a5; color: #dc2626; }
+
+  /* Optimize button */
+  #btn-optimize {
+    width: 100%; padding: 9px 12px; border-radius: var(--radius);
+    border: 1px solid var(--accent-r-mid); background: var(--accent-r-light);
+    color: var(--accent-r); font-family: inherit; font-size: 12px; font-weight: 600;
+    cursor: pointer; transition: background .15s, border-color .15s, color .15s;
+    display: flex; align-items: center; justify-content: center; gap: 7px;
+  }
+  #btn-optimize:hover:not(:disabled) { background: #c5e8e3; border-color: #217a6b; color: #155f52; }
+  #btn-optimize:disabled { opacity: .45; cursor: not-allowed; }
+  .spin {
+    width: 13px; height: 13px;
+    border: 2px solid var(--accent-r-mid); border-top-color: var(--accent-r);
+    border-radius: 50%; animation: spin .6s linear infinite; flex-shrink: 0;
+  }
+  @keyframes spin { to { transform: rotate(360deg); } }
+
+  /* Toast */
+  #toast {
+    position: fixed; bottom: 80px; left: 50%; transform: translateX(-50%);
+    background: var(--text); color: #fff; padding: 8px 18px; border-radius: 20px;
+    font-size: 12px; font-weight: 500; opacity: 0; pointer-events: none;
+    transition: opacity .25s ease; z-index: 9999; white-space: nowrap;
+    box-shadow: 0 4px 12px rgba(0,0,0,.25);
+  }
+  #toast.show    { opacity: 1; }
+  #toast.error   { background: #dc2626; }
+  #toast.success { background: #16a34a; }
+
+  #map-wrap { flex: 1; position: relative; min-width: 0; }
+  #map { width: 100%; height: 100%; }
+  
+  /* SUPPLIER FILTER PANEL */
+  #supplier-panel {
+    position: absolute; right: 500px; z-index: 1000;
+    background: var(--surface); border: 1px solid var(--border);
+    border-radius: var(--radius); padding: 12px; box-shadow: var(--shadow-md);
+    min-width: 220px; max-height: 300px; overflow-y: auto;
+  }
+  #supplier-panel::-webkit-scrollbar { width: 6px; }
+  #supplier-panel::-webkit-scrollbar-track { background: var(--surface2); border-radius: 3px; }
+  #supplier-panel::-webkit-scrollbar-thumb { background: var(--border2); border-radius: 3px; }
+  .panel-title {
+    font-size: 12px; font-weight: 600; margin-bottom: 10px; padding-bottom: 8px;
+    border-bottom: 1px solid var(--border); color: var(--text);
+  }
+  .supplier-checkbox {
+    display: flex; align-items: center; gap: 8px; margin-bottom: 8px;
+    cursor: pointer; padding: 4px 0; font-size: 12px;
+  }
+  .supplier-checkbox input[type="checkbox"] {
+    width: 16px; height: 16px; accent-color: var(--accent-l); cursor: pointer;
+  }
+  .supplier-checkbox:hover { background: var(--surface2); border-radius: var(--radius-sm); padding: 4px 6px; }
+  .supplier-label { line-height: 1.3; color: var(--text); user-select: none; }
+  
+  #mode-bar {
+    position: absolute; bottom: 28px; left: 50%; transform: translateX(-50%);
+    display: flex; z-index: 1000;
+    background: var(--surface); border: 1px solid var(--border2);
+    border-radius: 8px; padding: 4px; gap: 4px; box-shadow: var(--shadow-md);
+  }
+  .mode-btn {
+    padding: 9px 22px; font-family: inherit; font-size: 12px; font-weight: 500;
+    cursor: pointer; border: 1px solid transparent; border-radius: 5px;
+    background: transparent; color: var(--text-mid);
+    transition: background .15s, border-color .15s, color .15s;
+    display: flex; align-items: center; gap: 6px; white-space: nowrap;
+  }
+  .mode-btn:hover { background: var(--surface2); color: var(--text); }
+  #btn-close.active { background: var(--accent-l-light); border-color: var(--accent-l-mid); color: var(--accent-l); font-weight: 600; }
+  #btn-route.active { background: var(--accent-r-light); border-color: var(--accent-r-mid); color: var(--accent-r); font-weight: 600; }
+  .mode-dot { width: 6px; height: 6px; border-radius: 50%; flex-shrink: 0; }
+  #btn-close .mode-dot { background: var(--accent-l); }
+  #btn-route .mode-dot { background: var(--accent-r); }
+  .leaflet-tooltip {
+    background: var(--surface) !important; border: 1px solid var(--border2) !important;
+    border-radius: var(--radius) !important; box-shadow: var(--shadow-md) !important;
+    color: var(--text) !important; font-family: 'Inter', system-ui, sans-serif !important;
+    font-size: 12px !important; padding: 6px 10px !important;
+  }
+  .leaflet-tooltip::before { display: none !important; }
+</style>
+</head>
+<body>
+
+<!-- SUPPLIER FILTER PANEL -->
+<div id="supplier-panel">
+  <div class="panel-title">Filter by Supplier</div>
+  <div id="supplier-checkboxes"></div>
+</div>
+
+<!-- LEFT: Close Location -->
+<div id="sb-left" class="sidebar">
+  <div class="sb-head">
+    <div class="sb-title-bar"><div class="sb-accent-bar"></div><h2>Close Locations</h2></div>
+    <p>5 nearest locations to your selected marker</p>
+  </div>
+  <div class="sb-count"><span id="close-badge" class="badge">0 shown</span></div>
+  <div id="close-list" class="sb-list">
+    <div class="empty-msg"><span>Click any marker on the map<br>to find its 5 nearest neighbors.</span></div>
+  </div>
+  <div class="sb-foot">
+    <button class="clr-btn" id="btn-clear-close">&#10005;&nbsp; Clear Results</button>
+  </div>
+</div>
+
+<!-- MAP -->
+<div id="map-wrap">
+  <div id="map"></div>
+  <div id="mode-bar">
+    <button id="btn-close" class="mode-btn active"><span class="mode-dot"></span> Close Location</button>
+    <button id="btn-route" class="mode-btn"><span class="mode-dot"></span> Make Route</button>
+  </div>
+</div>
+
+<!-- RIGHT: Route List -->
+<div id="sb-right" class="sidebar hidden">
+  <div class="sb-head">
+    <div class="sb-title-bar"><div class="sb-accent-bar"></div><h2>Route List</h2></div>
+    <p>Click markers to add stops, then hit Optimize Route for the best driving order.</p>
+  </div>
+  <div class="sb-count"><span id="route-badge" class="badge">0 selected</span></div>
+  <div id="route-list" class="sb-list">
+    <div class="empty-msg"><span>No stops added yet.<br>Click markers on the map<br>to build your route.</span></div>
+  </div>
+  <div class="sb-foot">
+    <button id="btn-optimize" disabled>
+      <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round">
+        <circle cx="12" cy="12" r="10"/><path d="M12 6v6l4 2"/>
+      </svg>
+      Optimize Route
+    </button>
+    <button class="clr-btn" id="btn-clear-route">&#10005;&nbsp; Clear All</button>
+  </div>
+</div>
+
+<div id="toast"></div>
+
+<script>
+var MARKERS = [{"idx": 0, "lat": 32.92266, "lng": -79.86993, "retailer": "Refuel #55 (CHS)", "address": "1705 Clements Ferry Road, Charleston", "cluster": 5, "color": "#a30a23", "supplier": "Island Brands"}, {"idx": 1, "lat": 32.83941, "lng": -79.816624, "retailer": "Harris Teeter #385 (CHS)", "address": "2195 Tea Planter Lane, Mount Pleasant", "cluster": 5, "color": "#a30a23", "supplier": "Island Brands"}, {"idx": 2, "lat": 32.297782, "lng": -80.949252, "retailer": "Daddy O's Beer And Wine (CHS)", "address": "6A Young Clyde Court, Bluffton", "cluster": 4, "color": "#bd32d9", "supplier": "Island Brands"}, {"idx": 3, "lat": 32.795429, "lng": -79.859914, "retailer": "Harris Teeter #457 (CHS)", "address": "1220 Ben Sawyer Boulevard, Mount Pleasant", "cluster": 5, "color": "#a30a23", "supplier": "Island Brands"}, {"idx": 4, "lat": 32.877594, "lng": -80.017694, "retailer": "Walmart #3367 (CHS)", "address": "4920 Centre Pointe Drive, North Charleston", "cluster": 1, "color": "#0817a1", "supplier": "Island Brands"}, {"idx": 5, "lat": 32.816014, "lng": -79.842754, "retailer": "Total Wine & More #705-Mt P (CHS)", "address": "1501 North Highway 17, Mount Pleasant", "cluster": 5, "color": "#a30a23", "supplier": "Island Brands"}, {"idx": 6, "lat": 32.897823, "lng": -79.821698, "retailer": "Harris Teeter #131 (CHS)", "address": "2035 Highway 41, Mount Pleasant", "cluster": 5, "color": "#a30a23", "supplier": "Island Brands"}, {"idx": 7, "lat": 32.789941, "lng": -79.947564, "retailer": "Charlies Grocery-Spring St (CHS)", "address": "119 Spring Street, Charleston", "cluster": 1, "color": "#0817a1", "supplier": "Island Brands"}, {"idx": 8, "lat": 32.803356, "lng": -80.017078, "retailer": "Total Wine & More #702-W Ashley (CHS)", "address": "1820-A Ashley River Road, Charleston", "cluster": 1, "color": "#0817a1", "supplier": "Island Brands"}, {"idx": 9, "lat": 32.65662, "lng": -79.938498, "retailer": "Bert's Supermarket (CHS)", "address": "202 East Ashley Boulevard, Folly Beach", "cluster": 1, "color": "#0817a1", "supplier": "Island Brands"}, {"idx": 10, "lat": 32.978899, "lng": -80.128284, "retailer": "Walmart Market #3713 (CHS)", "address": "3685 Ladson Road, Ladson", "cluster": 3, "color": "#226b27", "supplier": "Island Brands"}, {"idx": 11, "lat": 32.839684, "lng": -79.857002, "retailer": "Harris Teeter #87 (CHS)", "address": "620 Long Point Road, Mount Pleasant", "cluster": 5, "color": "#a30a23", "supplier": "Island Brands"}, {"idx": 12, "lat": 32.814082, "lng": -79.845456, "retailer": "Walmart #0632 (CHS)", "address": "1481 US Highway 17, Mount Pleasant", "cluster": 5, "color": "#a30a23", "supplier": "Island Brands"}, {"idx": 13, "lat": 32.861797, "lng": -79.788224, "retailer": "Walmart #4384 (CHS)", "address": "3000 Proprietors Place, Mount Pleasant", "cluster": 5, "color": "#a30a23", "supplier": "Island Brands"}, {"idx": 14, "lat": 33.05892, "lng": -80.150878, "retailer": "Harris Teeter #368 (CHS)", "address": "1269 Nexton Parkway, Summerville", "cluster": 3, "color": "#226b27", "supplier": "Island Brands"}, {"idx": 15, "lat": 32.936631, "lng": -80.141339, "retailer": "Harris Teeter #363 (CHS)", "address": "9500 Dorchester Road, Summerville", "cluster": 3, "color": "#226b27", "supplier": "Island Brands"}, {"idx": 16, "lat": 32.82611, "lng": -80.085134, "retailer": "Harris Teeter #406 (CHS)", "address": "3865 West Ashley Circle, Charleston", "cluster": 1, "color": "#0817a1", "supplier": "Island Brands"}, {"idx": 17, "lat": 32.425369, "lng": -80.734167, "retailer": "Walmart #1383 (CHS)", "address": "350 Robert Smalls Parkway, Beaufort", "cluster": 2, "color": "#f79845", "supplier": "Island Brands"}, {"idx": 18, "lat": 32.156668, "lng": -80.765464, "retailer": "Publix #0700 (CHS)", "address": "11 Palmetto Bay Road, Hilton Head Island", "cluster": 4, "color": "#bd32d9", "supplier": "Island Brands"}, {"idx": 19, "lat": 32.793105, "lng": -79.936467, "retailer": "Spar Reid Market (CHS)", "address": "51 Reid Street, Charleston", "cluster": 1, "color": "#0817a1", "supplier": "Island Brands"}, {"idx": 20, "lat": 32.881247, "lng": -79.977463, "retailer": "I Heart CBD - Park Circle (CHS)", "address": "1083 East Montague Avenue, North Charleston", "cluster": 1, "color": "#0817a1", "supplier": "Island Brands"}, {"idx": 21, "lat": 33.084194, "lng": -80.205709, "retailer": "Spinx #0364 (CHS)", "address": "845 Jedburg Road, Summerville", "cluster": 3, "color": "#226b27", "supplier": "Island Brands"}, {"idx": 22, "lat": 32.931083, "lng": -79.819808, "retailer": "Spinx #0341 (CHS)", "address": "2627 Highway 41, Charleston", "cluster": 5, "color": "#a30a23", "supplier": "Island Brands"}, {"idx": 23, "lat": 33.047029, "lng": -80.109495, "retailer": "Spinx #0355 (CHS)", "address": "2160 North Main Street, Summerville", "cluster": 3, "color": "#226b27", "supplier": "Island Brands"}, {"idx": 24, "lat": 32.874008, "lng": -79.770935, "retailer": "E Cig Depot - Mt Pleasant (CHS)", "address": "3377 South Morgans Point Road, Mount Pleasant", "cluster": 5, "color": "#a30a23", "supplier": "Island Brands"}, {"idx": 25, "lat": 32.842704, "lng": -79.815348, "retailer": "Spinx #371 (CHS)", "address": "1130 Holliday Farms Boulevard, Mount Pleasant", "cluster": 5, "color": "#a30a23", "supplier": "Island Brands"}, {"idx": 26, "lat": 32.732826, "lng": -80.058195, "retailer": "Spinx #370 (CHS)", "address": "3285 Timberline Dr, Johns Island", "cluster": 1, "color": "#0817a1", "supplier": "Island Brands"}, {"idx": 27, "lat": 33.153237, "lng": -80.058732, "retailer": "Spinx #0317 (CHS)", "address": "1558 South Live Oak Drive, Moncks Corner", "cluster": 3, "color": "#226b27", "supplier": "Island Brands"}, {"idx": 28, "lat": 32.989946, "lng": -80.099998, "retailer": "Spinx #0356 (CHS)", "address": "9636 Highway 78, Ladson", "cluster": 3, "color": "#226b27", "supplier": "Island Brands"}, {"idx": 29, "lat": 32.920104, "lng": -80.030728, "retailer": "Spinx #0350 (CHS)", "address": "6899 Rivers Avenue, North Charleston", "cluster": 1, "color": "#0817a1", "supplier": "Island Brands"}, {"idx": 30, "lat": 32.918506, "lng": -80.101197, "retailer": "Spinx #0352 (CHS)", "address": "4895 Ashley Phosphate Road, North Charleston", "cluster": 3, "color": "#226b27", "supplier": "Island Brands"}, {"idx": 31, "lat": 32.864774, "lng": -80.013695, "retailer": "Spinx #0351 (CHS)", "address": "3109 West Montague Avenue, North Charleston", "cluster": 1, "color": "#0817a1", "supplier": "Island Brands"}, {"idx": 32, "lat": 32.934126, "lng": -79.999537, "retailer": "Lowe's Foods #279 (CHS)", "address": "1000 Tanner Ford Boulevard, Hanahan", "cluster": 1, "color": "#0817a1", "supplier": "Island Brands"}, {"idx": 33, "lat": 32.864331, "lng": -79.904578, "retailer": "Refuel #18 (CHS)", "address": "860 Island Park Drive, Charleston", "cluster": 5, "color": "#a30a23", "supplier": "Island Brands"}, {"idx": 34, "lat": 32.97067, "lng": -80.208764, "retailer": "Spinx #0366 (CHS)", "address": "10696 Dorchester Road, Summerville", "cluster": 3, "color": "#226b27", "supplier": "Island Brands"}, {"idx": 35, "lat": 32.842361, "lng": -80.059423, "retailer": "Lowe's Foods #278 (CHS)", "address": "3125 Bees Ferry Road, Charleston", "cluster": 1, "color": "#0817a1", "supplier": "Island Brands"}, {"idx": 36, "lat": 32.89165, "lng": -79.985853, "retailer": "Jadoon's Market (CHS)", "address": "5137 North Rhett Avenue, North Charleston", "cluster": 1, "color": "#0817a1", "supplier": "Island Brands"}, {"idx": 37, "lat": 32.953902, "lng": -80.164391, "retailer": "Lowe's Foods #270 (CHS)", "address": "10048 Dorchester Road, Summerville", "cluster": 3, "color": "#226b27", "supplier": "Island Brands"}, {"idx": 38, "lat": 33.041257, "lng": -80.248144, "retailer": "Spinx #0353 (CHS)", "address": "1310 Orangeburg Road, Summerville", "cluster": 3, "color": "#226b27", "supplier": "Island Brands"}, {"idx": 39, "lat": 33.023093, "lng": -80.165556, "retailer": "Spinx #0359 (CHS)", "address": "360 East 5th North Street, Summerville", "cluster": 3, "color": "#226b27", "supplier": "Island Brands"}, {"idx": 40, "lat": 32.819089, "lng": -80.068082, "retailer": "Spinx #368 (CHS)", "address": "4000 Wildcat Boulevard, Charleston", "cluster": 1, "color": "#0817a1", "supplier": "Island Brands"}, {"idx": 41, "lat": 32.720764, "lng": -80.080736, "retailer": "Lowe's Foods #293 (CHS)", "address": "3575 Maybank Highway, Johns Island", "cluster": 1, "color": "#0817a1", "supplier": "Island Brands"}, {"idx": 42, "lat": 33.089794, "lng": -80.030307, "retailer": "Publix #1775 (CHS)", "address": "2830 Highway 52, Moncks Corner", "cluster": 3, "color": "#226b27", "supplier": "Island Brands"}, {"idx": 43, "lat": 32.270532, "lng": -80.916747, "retailer": "Publix #1205 (CHS)", "address": "101 Buckwalter Place Boulevard, Bluffton", "cluster": 4, "color": "#bd32d9", "supplier": "Island Brands"}, {"idx": 44, "lat": 32.912866, "lng": -80.109221, "retailer": "Publix #0824 (CHS)", "address": "8409 Dorchester Road, North Charleston", "cluster": 3, "color": "#226b27", "supplier": "Island Brands"}, {"idx": 45, "lat": 32.753634, "lng": -79.970954, "retailer": "Publix #0633 (CHS)", "address": "520 Folly Road, Charleston", "cluster": 1, "color": "#0817a1", "supplier": "Island Brands"}, {"idx": 46, "lat": 32.813269, "lng": -79.997695, "retailer": "Publix #0472 (CHS)", "address": "1401 Sam Rittenberg Boulevard, Charleston", "cluster": 1, "color": "#0817a1", "supplier": "Island Brands"}, {"idx": 47, "lat": 32.813839, "lng": -79.867313, "retailer": "Publix #0449 (CHS)", "address": "1000 Johnnie Dodds Boulevard, Mount Pleasant", "cluster": 5, "color": "#a30a23", "supplier": "Island Brands"}, {"idx": 48, "lat": 33.011712, "lng": -80.234942, "retailer": "Publix #1120 (CHS)", "address": "1585 Central Avenue, Summerville", "cluster": 3, "color": "#226b27", "supplier": "Island Brands"}, {"idx": 49, "lat": 32.207513, "lng": -80.885846, "retailer": "RTs Market (CHS)", "address": "12 Westerwald Street, Bluffton", "cluster": 4, "color": "#bd32d9", "supplier": "Island Brands"}, {"idx": 50, "lat": 32.967347, "lng": -80.203928, "retailer": "Walmart Market #6174 (CHS)", "address": "10635 Dorchester Road, Summerville", "cluster": 3, "color": "#226b27", "supplier": "Island Brands"}, {"idx": 51, "lat": 32.437662, "lng": -80.704822, "retailer": "Publix #1716 (CHS)", "address": "33 Robert Smalls Parkway, Beaufort", "cluster": 2, "color": "#f79845", "supplier": "Island Brands"}, {"idx": 52, "lat": 32.211534, "lng": -80.728707, "retailer": "Walmart #0728 (CHS)", "address": "25 Pembroke Drive, Hilton Head Island", "cluster": 4, "color": "#bd32d9", "supplier": "Island Brands"}, {"idx": 53, "lat": 32.786855, "lng": -79.95705, "retailer": "Publix #1599 (CHS)", "address": "10 Westedge Street, Charleston", "cluster": 1, "color": "#0817a1", "supplier": "Island Brands"}, {"idx": 54, "lat": 32.763049, "lng": -79.836577, "retailer": "Refuel #50 (CHS)", "address": "2220 Middle Street, Sullivans Island", "cluster": 5, "color": "#a30a23", "supplier": "Island Brands"}, {"idx": 55, "lat": 32.929084, "lng": -79.71285, "retailer": "Sewee Outpost (CHS)", "address": "4853 North Highway 17, Awendaw", "cluster": 5, "color": "#a30a23", "supplier": "Island Brands"}, {"idx": 56, "lat": 33.091703, "lng": -80.032203, "retailer": "Spinx #0358 (CHS)", "address": "2801 US-52, Moncks Corner", "cluster": 3, "color": "#226b27", "supplier": "Island Brands"}, {"idx": 57, "lat": 32.966816, "lng": -80.166093, "retailer": "Publix #0483 (CHS)", "address": "1575 Old Trolley Road, Summerville", "cluster": 3, "color": "#226b27", "supplier": "Island Brands"}, {"idx": 58, "lat": 32.863656, "lng": -79.903566, "retailer": "Publix #2090 (CHS)", "address": "162 Seven Farms Drive, Daniel Island", "cluster": 5, "color": "#a30a23", "supplier": "Island Brands"}, {"idx": 59, "lat": 32.80489, "lng": -80.111841, "retailer": "Publix #1145 (CHS)", "address": "3642 Savannah Highway, Johns Island", "cluster": 1, "color": "#0817a1", "supplier": "Island Brands"}, {"idx": 60, "lat": 32.79162, "lng": -79.854302, "retailer": "Publix #1055 (CHS)", "address": "1435 Ben Sawyer Boulevard, Mount Pleasant", "cluster": 5, "color": "#a30a23", "supplier": "Island Brands"}, {"idx": 61, "lat": 32.874079, "lng": -79.779347, "retailer": "Publix #1081 (CHS)", "address": "1125 Park West Boulevard, Mount Pleasant", "cluster": 5, "color": "#a30a23", "supplier": "Island Brands"}, {"idx": 62, "lat": 33.060321, "lng": -80.153804, "retailer": "Publix #1866 (CHS)", "address": "1274 Nexton Parkway, Summerville", "cluster": 3, "color": "#226b27", "supplier": "Island Brands"}, {"idx": 63, "lat": 32.821683, "lng": -80.081426, "retailer": "Walmart #1748 (CHS)", "address": "3951 West Ashley Circle, Charleston", "cluster": 1, "color": "#0817a1", "supplier": "Island Brands"}, {"idx": 64, "lat": 32.30821, "lng": -80.973388, "retailer": "Publix #1354 (CHS)", "address": "112 Nickle Plate Road, Hardeeville", "cluster": 4, "color": "#bd32d9", "supplier": "Island Brands"}, {"idx": 65, "lat": 32.714256, "lng": -79.96682, "retailer": "Publix #1645 (CHS)", "address": "1411 Folly Road Suite 100, Charleston", "cluster": 1, "color": "#0817a1", "supplier": "Island Brands"}, {"idx": 66, "lat": 32.921594, "lng": -79.871326, "retailer": "Publix #1646 (CHS)", "address": "730 Hopewell Drive, Charleston", "cluster": 5, "color": "#a30a23", "supplier": "Island Brands"}, {"idx": 67, "lat": 33.033974, "lng": -80.18418, "retailer": "Spinx #0378 (CHS)", "address": "930 West 5th North Street, Summerville", "cluster": 3, "color": "#226b27", "supplier": "Island Brands"}, {"idx": 68, "lat": 33.106817, "lng": -80.125944, "retailer": "Publix #1266 (CHS)", "address": "1724 State Road, Summerville", "cluster": 3, "color": "#226b27", "supplier": "Island Brands"}, {"idx": 69, "lat": 32.98124, "lng": -80.126642, "retailer": "Spinx #0354 (CHS)", "address": "3665 Ladson Road, Ladson", "cluster": 3, "color": "#226b27", "supplier": "Island Brands"}, {"idx": 70, "lat": 32.210974, "lng": -80.725213, "retailer": "Publix #0473 (CHS)", "address": "45 Pembroke Drive, Hilton Head Island", "cluster": 4, "color": "#bd32d9", "supplier": "Island Brands"}, {"idx": 71, "lat": 33.062768, "lng": -80.096192, "retailer": "Publix #2038 (CHS)", "address": "2700 North Main Street, Summerville", "cluster": 3, "color": "#226b27", "supplier": "Island Brands"}, {"idx": 72, "lat": 32.830381, "lng": -79.831468, "retailer": "Towne Centre Market - Mt P (CHS)", "address": "1865 Highway 17 North, Mount Pleasant", "cluster": 5, "color": "#a30a23", "supplier": "Island Brands"}, {"idx": 73, "lat": 32.967002, "lng": -79.99396, "retailer": "NWS - Navy Exchange (CHS)", "address": "1765 Red Bank Road, Goose Creek", "cluster": 3, "color": "#226b27", "supplier": "Island Brands"}, {"idx": 74, "lat": 33.096343, "lng": -80.031391, "retailer": "Parkers #81 (CHS)", "address": "106 Foxbank Plantation Boulevard, Moncks Corner", "cluster": 3, "color": "#226b27", "supplier": "Island Brands"}, {"idx": 75, "lat": 32.311656, "lng": -81.056713, "retailer": "Nouria #1403/Enmarket #863 (CHS)", "address": "448 Independence Boulevard, Hardeeville", "cluster": 4, "color": "#bd32d9", "supplier": "Island Brands"}, {"idx": 76, "lat": 33.089446, "lng": -80.079603, "retailer": "Parkers #121 (CHS)", "address": "3018 South Live Oak Drive, Moncks Corner", "cluster": 3, "color": "#226b27", "supplier": "Island Brands"}, {"idx": 77, "lat": 33.025963, "lng": -80.174132, "retailer": "Piggly Wiggly #299 (CHS)", "address": "404 North Cedar Street, Summerville", "cluster": 3, "color": "#226b27", "supplier": "Island Brands"}, {"idx": 78, "lat": 32.685862, "lng": -79.961027, "retailer": "Harris Teeter #453 (CHS)", "address": "1985 Folly Road, Charleston", "cluster": 1, "color": "#0817a1", "supplier": "Island Brands"}, {"idx": 79, "lat": 32.45254, "lng": -80.733067, "retailer": "Parkers #59 (CHS)", "address": "3462 Trask Parkway, Beaufort", "cluster": 2, "color": "#f79845", "supplier": "Island Brands"}, {"idx": 80, "lat": 32.785119, "lng": -80.001894, "retailer": "V Go #21 - Savannah Hwy (CHS)", "address": "1406 Savannah Highway, Charleston", "cluster": 1, "color": "#0817a1", "supplier": "Island Brands"}, {"idx": 81, "lat": 33.093006, "lng": -79.479055, "retailer": "Country Corner #28 - McClellanville (CHS)", "address": "10035 North Highway 17, McClellanville", "cluster": 5, "color": "#a30a23", "supplier": "Island Brands"}, {"idx": 82, "lat": 32.414988, "lng": -80.653749, "retailer": "Bill's Party # 7 - Lady's Island (CHS)", "address": "132B Sea Island Parkway, Beaufort", "cluster": 2, "color": "#f79845", "supplier": "Island Brands"}, {"idx": 83, "lat": 32.383856, "lng": -80.69225, "retailer": "Parkers #48 (CHS)", "address": "1705 Ribaut Road, Port Royal", "cluster": 2, "color": "#f79845", "supplier": "Island Brands"}, {"idx": 84, "lat": 32.42498, "lng": -80.643765, "retailer": "Parkers #66 (CHS)", "address": "133 Sam's Point Road, Beaufort", "cluster": 2, "color": "#f79845", "supplier": "Island Brands"}, {"idx": 85, "lat": 32.802526, "lng": -80.019691, "retailer": "Harris Teeter #410 (CHS)", "address": "1812 Sam Rittenberg Boulevard, Charleston", "cluster": 1, "color": "#0817a1", "supplier": "Island Brands"}, {"idx": 86, "lat": 32.273899, "lng": -80.917513, "retailer": "Kroger #703 (CHS)", "address": "27 Discovery Drive, Bluffton", "cluster": 4, "color": "#bd32d9", "supplier": "Island Brands"}, {"idx": 87, "lat": 32.396441, "lng": -80.577244, "retailer": "Parkers #67 (CHS)", "address": "856 Sea Island Parkway, Beaufort", "cluster": 2, "color": "#f79845", "supplier": "Island Brands"}, {"idx": 88, "lat": 32.969181, "lng": -80.011555, "retailer": "Food Lion #0410 (CHS)", "address": "1316 Red Bank Road, Goose Creek", "cluster": 3, "color": "#226b27", "supplier": "Island Brands"}, {"idx": 89, "lat": 33.008028, "lng": -80.047231, "retailer": "Walmart Market #3899 (CHS)", "address": "215 Saint James Avenue, Goose Creek", "cluster": 3, "color": "#226b27", "supplier": "Island Brands"}, {"idx": 90, "lat": 32.746308, "lng": -79.971944, "retailer": "Harris Teeter #28 (CHS)", "address": "675 Folly Road, Charleston", "cluster": 1, "color": "#0817a1", "supplier": "Island Brands"}, {"idx": 91, "lat": 32.86143, "lng": -79.908113, "retailer": "Circle K #2723882 (CHS)", "address": "901 Island Park Drive, Charleston", "cluster": 5, "color": "#a30a23", "supplier": "Island Brands"}, {"idx": 92, "lat": 33.196141, "lng": -80.599665, "retailer": "Food Lion #2850 (CHS)", "address": "5982 West Jim Bilton Boulevard, Saint George", "cluster": 3, "color": "#226b27", "supplier": "Island Brands"}, {"idx": 93, "lat": 32.414326, "lng": -80.648517, "retailer": "Harris Teeter #429 (CHS)", "address": "163 Sea Island Parkway, Beaufort", "cluster": 2, "color": "#f79845", "supplier": "Island Brands"}, {"idx": 94, "lat": 33.21888, "lng": -79.968441, "retailer": "Parkers #72 (CHS)", "address": "1105 North Highway 52, Moncks Corner", "cluster": 3, "color": "#226b27", "supplier": "Island Brands"}, {"idx": 95, "lat": 32.789545, "lng": -79.787191, "retailer": "Harris Teeter #452 (CHS)", "address": "1513 Palm Boulevard, Isle Of Palms", "cluster": 5, "color": "#a30a23", "supplier": "Island Brands"}, {"idx": 96, "lat": 32.819443, "lng": -79.992981, "retailer": "Parkers #79 (CHS)", "address": "1140 Sam Rittenberg Boulevard, Charleston", "cluster": 1, "color": "#0817a1", "supplier": "Island Brands"}, {"idx": 97, "lat": 32.801986, "lng": -79.891771, "retailer": "Harris Teeter #19 (CHS)", "address": "920 Houston Northcutt Boulevard, Mount Pleasant", "cluster": 5, "color": "#a30a23", "supplier": "Island Brands"}, {"idx": 98, "lat": 33.210644, "lng": -79.985606, "retailer": "Walmart #1146 (CHS)", "address": "511 North Highway 52, Moncks Corner", "cluster": 3, "color": "#226b27", "supplier": "Island Brands"}, {"idx": 99, "lat": 32.904994, "lng": -80.6612, "retailer": "General Foods IGA - Walterboro #5224 (CHS)", "address": "601 Wichman Street, Walterboro", "cluster": 3, "color": "#226b27", "supplier": "Island Brands"}, {"idx": 100, "lat": 32.779111, "lng": -79.949875, "retailer": "The Sea Store (CHS)", "address": "7 Lockwood Drive, Charleston", "cluster": 1, "color": "#0817a1", "supplier": "Island Brands"}, {"idx": 101, "lat": 32.787605, "lng": -79.788587, "retailer": "Circle K #2720492 (CHS)", "address": "1206 Palm Boulevard, Isle Of Palms", "cluster": 5, "color": "#a30a23", "supplier": "Island Brands"}, {"idx": 102, "lat": 32.785061, "lng": -79.935611, "retailer": "King Street Station (CHS)", "address": "356 King Street, Charleston", "cluster": 1, "color": "#0817a1", "supplier": "Island Brands"}, {"idx": 103, "lat": 32.741825, "lng": -79.936152, "retailer": "Harris Teeter #456 (CHS)", "address": "1005 Harbor View Road, Charleston", "cluster": 1, "color": "#0817a1", "supplier": "Island Brands"}, {"idx": 104, "lat": 32.78246, "lng": -79.991036, "retailer": "Harris Teeter #365 (CHS)", "address": "975 Savannah Highway, Charleston", "cluster": 1, "color": "#0817a1", "supplier": "Island Brands"}, {"idx": 105, "lat": 32.25974, "lng": -80.854278, "retailer": "Walmart #6395 (CHS)", "address": "4 Bluffton Road, Bluffton", "cluster": 4, "color": "#bd32d9", "supplier": "Island Brands"}, {"idx": 106, "lat": 32.999586, "lng": -80.185617, "retailer": "Harris Teeter #355 (CHS)", "address": "680 Bacons Bridge Road, Summerville", "cluster": 3, "color": "#226b27", "supplier": "Island Brands"}, {"idx": 107, "lat": 32.95018, "lng": -80.155164, "retailer": "Walmart #0628 (CHS)", "address": "9880 Dorchester Road, Summerville", "cluster": 3, "color": "#226b27", "supplier": "Island Brands"}, {"idx": 108, "lat": 33.105041, "lng": -80.126419, "retailer": "Parkers #77 (CHS)", "address": "1111 Cane Bay Boulevard, Summerville", "cluster": 3, "color": "#226b27", "supplier": "Island Brands"}, {"idx": 109, "lat": 32.363055, "lng": -80.870366, "retailer": "Parkers #55 (CHS)", "address": "7021 North Okatie Highway, Ridgeland", "cluster": 4, "color": "#bd32d9", "supplier": "Island Brands"}, {"idx": 110, "lat": 32.744996, "lng": -80.038179, "retailer": "Food Lion #1499 (CHS)", "address": "2770 Maybank Highway, Johns Island", "cluster": 1, "color": "#0817a1", "supplier": "Island Brands"}, {"idx": 111, "lat": 32.606859, "lng": -80.147828, "retailer": "Harris Teeter #451 (CHS)", "address": "515 Freshfields Drive, Johns Island", "cluster": 1, "color": "#0817a1", "supplier": "Island Brands"}, {"idx": 112, "lat": 32.790925, "lng": -80.029981, "retailer": "Piggly Wiggly #199 (CHS)", "address": "630 Skylark Drive, Charleston", "cluster": 1, "color": "#0817a1", "supplier": "Island Brands"}, {"idx": 113, "lat": 32.761902, "lng": -79.977026, "retailer": "Harris Teeter #455 (CHS)", "address": "1739 Maybank Highway, Charleston", "cluster": 1, "color": "#0817a1", "supplier": "Island Brands"}, {"idx": 114, "lat": 32.236796, "lng": -80.860296, "retailer": "Nickel Pumpers - Bluffton (CHS)", "address": "2 Bruin Road, Bluffton", "cluster": 4, "color": "#bd32d9", "supplier": "Island Brands"}, {"idx": 115, "lat": 32.784528, "lng": -79.928375, "retailer": "Harris Teeter #277 (CHS)", "address": "290 East Bay Street, Charleston", "cluster": 1, "color": "#0817a1", "supplier": "Island Brands"}, {"idx": 116, "lat": 32.906035, "lng": -79.822929, "retailer": "Lowe's Foods #265 (CHS)", "address": "2110 SC Highway 41, Mount Pleasant", "cluster": 5, "color": "#a30a23", "supplier": "Island Brands"}, {"idx": 117, "lat": 32.811861, "lng": -79.852392, "retailer": "Fresh Market #260 (CHS)", "address": "1118 Bowman Road, Mount Pleasant", "cluster": 5, "color": "#a30a23", "supplier": "Island Brands"}, {"idx": 118, "lat": 33.05615, "lng": -80.152044, "retailer": "Refuel #48 (CHS)", "address": "605 Brighton Park Boulevard, Summerville", "cluster": 3, "color": "#226b27", "supplier": "Island Brands"}, {"idx": 119, "lat": 32.720536, "lng": -79.967672, "retailer": "Walmart #2348 (CHS)", "address": "1231 Folly Road, Charleston", "cluster": 1, "color": "#0817a1", "supplier": "Island Brands"}, {"idx": 120, "lat": 32.169863, "lng": -80.739553, "retailer": "Fresh Market #48 (CHS)", "address": "890 William Hilton Parkway, Hilton Head Island", "cluster": 4, "color": "#bd32d9", "supplier": "Island Brands"}, {"idx": 121, "lat": 33.031847, "lng": -80.162841, "retailer": "Earth Fare #205 - Summerville (CHS)", "address": "1101 North Main Street, Summerville", "cluster": 3, "color": "#226b27", "supplier": "Rusty Bull Brewing Company"}, {"idx": 122, "lat": 32.792784, "lng": -80.036881, "retailer": "Food Lion #1691 (CHS)", "address": "2144 Savannah Highway, Charleston", "cluster": 1, "color": "#0817a1", "supplier": "Rusty Bull Brewing Company"}, {"idx": 123, "lat": 33.033964, "lng": -80.162111, "retailer": "Bottles Beverage - Summerville (CHS)", "address": "1110B North Main Street, Summerville", "cluster": 3, "color": "#226b27", "supplier": "Rusty Bull Brewing Company"}, {"idx": 124, "lat": 33.056501, "lng": -80.240196, "retailer": "Food Lion #2247 (CHS)", "address": "2915 West Fifth Street, Summerville", "cluster": 3, "color": "#226b27", "supplier": "Rusty Bull Brewing Company"}, {"idx": 125, "lat": 33.009413, "lng": -80.044382, "retailer": "Beer Man (CHS)", "address": "214 Saint James Avenue, Goose Creek", "cluster": 3, "color": "#226b27", "supplier": "Rusty Bull Brewing Company"}, {"idx": 126, "lat": 32.33524, "lng": -80.466244, "retailer": "Springtide Market - Fripp (CHS)", "address": "1 Tarpon Boulevard, Saint Helena Island", "cluster": 2, "color": "#f79845", "supplier": "Rusty Bull Brewing Company"}, {"idx": 127, "lat": 32.807512, "lng": -80.008931, "retailer": "Kwik Stop Foods - Sam Rit (CHS)", "address": "1574 Sam Rittenberg Boulevard, Charleston", "cluster": 1, "color": "#0817a1", "supplier": "Rusty Bull Brewing Company"}, {"idx": 128, "lat": 32.785691, "lng": -79.979062, "retailer": "V Go #16 - Colony DR/61 (CHS)", "address": "642 Saint Andrews Boulevard, Charleston", "cluster": 1, "color": "#0817a1", "supplier": "Rusty Bull Brewing Company"}, {"idx": 129, "lat": 32.151985, "lng": -80.767237, "retailer": "Harris Teeter #423 (CHS)", "address": "33 Office Park Road, Hilton Head Island", "cluster": 4, "color": "#bd32d9", "supplier": "Rusty Bull Brewing Company"}, {"idx": 130, "lat": 32.902676, "lng": -80.078615, "retailer": "Palmetto Mart (CHS)", "address": "7540 Dorchester Road, North Charleston", "cluster": 1, "color": "#0817a1", "supplier": "Rusty Bull Brewing Company"}, {"idx": 131, "lat": 32.913793, "lng": -80.106168, "retailer": "Carolina Spirits (CHS)", "address": "8350 Dorchester Road, North Charleston", "cluster": 3, "color": "#226b27", "supplier": "Rusty Bull Brewing Company"}, {"idx": 132, "lat": 32.791971, "lng": -79.874986, "retailer": "Bottles Beverage - Mt Pleasant (CHS)", "address": "610 Coleman Boulevard, Mount Pleasant", "cluster": 5, "color": "#a30a23", "supplier": "Rusty Bull Brewing Company"}, {"idx": 133, "lat": 32.912188, "lng": -79.909025, "retailer": "FIFO Charleston (CHS)", "address": "1600 Charleston Regional Parkway, Charleston", "cluster": 5, "color": "#a30a23", "supplier": "Rusty Bull Brewing Company"}, {"idx": 134, "lat": 32.624846, "lng": -80.881762, "retailer": "KOA-Point South (CHS)", "address": "14 Campground Road, Yemassee", "cluster": 2, "color": "#f79845", "supplier": "Southern Barrel Brewing Company"}, {"idx": 135, "lat": 32.143802, "lng": -80.752017, "retailer": "Rollers Conv Lagoon (CHS)", "address": "6 Lagoon Road, Hilton Head Island", "cluster": 4, "color": "#bd32d9", "supplier": "Southern Barrel Brewing Company"}, {"idx": 136, "lat": 32.191624, "lng": -81.02979, "retailer": "Publix #1714 (CHS)", "address": "3521 Okatie Highway, Bluffton", "cluster": 4, "color": "#bd32d9", "supplier": "Southern Barrel Brewing Company"}, {"idx": 137, "lat": 32.158755, "lng": -80.753407, "retailer": "Patels Party Shop-HHI (CHS)", "address": "2 New Orleans Road, Hilton Head Island", "cluster": 4, "color": "#bd32d9", "supplier": "Southern Barrel Brewing Company"}, {"idx": 138, "lat": 32.791134, "lng": -79.940127, "retailer": "College Market (CHS)", "address": "543 King Street, Charleston", "cluster": 1, "color": "#0817a1", "supplier": "Southern Barrel Brewing Company"}, {"idx": 139, "lat": 32.782767, "lng": -79.99632, "retailer": "Whole Foods #10698 (CHS)", "address": "1125 Savannah Highway, Charleston", "cluster": 1, "color": "#0817a1", "supplier": "Southern Barrel Brewing Company"}, {"idx": 140, "lat": 32.388828, "lng": -80.541435, "retailer": "Palmetto Dunes Store (CHS)", "address": "1 Queens Folly Road, Hilton Head Island", "cluster": 2, "color": "#f79845", "supplier": "Southern Barrel Brewing Company"}, {"idx": 141, "lat": 32.226527, "lng": -80.698804, "retailer": "Tailwind HHH (CHS)", "address": "120 Beach City Road, Hilton Head Island", "cluster": 4, "color": "#bd32d9", "supplier": "Southern Barrel Brewing Company"}, {"idx": 142, "lat": 32.253829, "lng": -80.845759, "retailer": "Parkers #36 (CHS)", "address": "2 Gateway Village Road, Bluffton", "cluster": 4, "color": "#bd32d9", "supplier": "Southern Barrel Brewing Company"}, {"idx": 143, "lat": 32.414832, "lng": -80.64931, "retailer": "Food Lion #0945 (CHS)", "address": "10 Sams Point Road, Beaufort", "cluster": 2, "color": "#f79845", "supplier": "Southern Barrel Brewing Company"}, {"idx": 144, "lat": 32.600548, "lng": -80.100757, "retailer": "The Nest - Kiawah (CHS)", "address": "4000-C Sea Forest Drive, Johns Island", "cluster": 1, "color": "#0817a1", "supplier": "Southern Barrel Brewing Company"}, {"idx": 145, "lat": 32.485265, "lng": -80.977409, "retailer": "Hoppers (CHS)", "address": "11142 North Jacob Smart Boulevard, Ridgeland", "cluster": 2, "color": "#f79845", "supplier": "Southern Barrel Brewing Company"}, {"idx": 146, "lat": 32.239291, "lng": -80.878151, "retailer": "Parkers #43 (CHS)", "address": "6200 Jennifer Court, Bluffton", "cluster": 4, "color": "#bd32d9", "supplier": "Southern Barrel Brewing Company"}, {"idx": 147, "lat": 32.130996, "lng": -80.800001, "retailer": "Plantation Gas & Go (CHS)", "address": "69 Lighthouse Road, Hilton Head Island", "cluster": 4, "color": "#bd32d9", "supplier": "Southern Barrel Brewing Company"}, {"idx": 148, "lat": 32.268051, "lng": -80.858503, "retailer": "Kroger #499 (CHS)", "address": "125 Towne Drive, Bluffton", "cluster": 4, "color": "#bd32d9", "supplier": "Southern Barrel Brewing Company"}, {"idx": 149, "lat": 32.33939, "lng": -80.92904, "retailer": "Circle K #2720912 (CHS)", "address": "2819 North Okatie Highway, Ridgeland", "cluster": 4, "color": "#bd32d9", "supplier": "Southern Barrel Brewing Company"}, {"idx": 150, "lat": 32.272393, "lng": -80.916917, "retailer": "Blue Water #17 (CHS)", "address": "100 Buckwalter Place Boulevard, Bluffton", "cluster": 4, "color": "#bd32d9", "supplier": "Southern Barrel Brewing Company"}, {"idx": 151, "lat": 32.480185, "lng": -80.974338, "retailer": "B&T Fresh Market (CHS)", "address": "8205 East Main Street, Ridgeland", "cluster": 2, "color": "#f79845", "supplier": "Southern Barrel Brewing Company"}, {"idx": 152, "lat": 32.887456, "lng": -80.06742, "retailer": "CAFB - Shoppette (CHS)", "address": "1951 Oneal Avenue, Charleston", "cluster": 1, "color": "#0817a1", "supplier": "Southern Barrel Brewing Company"}, {"idx": 153, "lat": 32.277426, "lng": -80.876332, "retailer": "Publix #0845 (CHS)", "address": "80 Baylor Drive, Bluffton", "cluster": 4, "color": "#bd32d9", "supplier": "Southern Barrel Brewing Company"}, {"idx": 154, "lat": 32.21179, "lng": -80.694894, "retailer": "Parkers #90 (CHS)", "address": "430 William Hilton Parkway, Hilton Head Island", "cluster": 4, "color": "#bd32d9", "supplier": "Southern Barrel Brewing Company"}, {"idx": 155, "lat": 32.341526, "lng": -80.92877, "retailer": "Yamuna Foodmart (CHS)", "address": "2935 North Okatie Highway, Ridgeland", "cluster": 4, "color": "#bd32d9", "supplier": "Southern Barrel Brewing Company"}, {"idx": 156, "lat": 32.143409, "lng": -80.750369, "retailer": "Piggly Wiggly #101 (CHS)", "address": "1 North Forest Beach Drive, Hilton Head Island", "cluster": 4, "color": "#bd32d9", "supplier": "Southern Barrel Brewing Company"}, {"idx": 157, "lat": 32.478476, "lng": -80.972424, "retailer": "Ez Stop #4 (CHS)", "address": "80-A Blue Heron Drive, Ridgeland", "cluster": 2, "color": "#f79845", "supplier": "Southern Barrel Brewing Company"}, {"idx": 158, "lat": 32.377391, "lng": -80.727268, "retailer": "Food Lion #2839 (CHS)", "address": "860 Parris Island Gateway, Beaufort", "cluster": 2, "color": "#f79845", "supplier": "Southern Barrel Brewing Company"}, {"idx": 159, "lat": 32.384021, "lng": -80.736511, "retailer": "Parkers #58 (CHS)", "address": "12 Savannah Highway, Beaufort", "cluster": 2, "color": "#f79845", "supplier": "Southern Barrel Brewing Company"}, {"idx": 160, "lat": 32.970144, "lng": -80.003197, "retailer": "Walmart Market #3646 (CHS)", "address": "1635 Red Bank Road, Goose Creek", "cluster": 3, "color": "#226b27", "supplier": "Southern Barrel Brewing Company"}, {"idx": 161, "lat": 32.295911, "lng": -80.935207, "retailer": "Parkers #61 (CHS)", "address": "6 Barrel Landing Road, Okatie", "cluster": 4, "color": "#bd32d9", "supplier": "Southern Barrel Brewing Company"}, {"idx": 162, "lat": 32.256234, "lng": -80.850026, "retailer": "Nouria #1392/Enmarket #831 (CHS)", "address": "1010 Fording Island Road, Bluffton", "cluster": 4, "color": "#bd32d9", "supplier": "Southern Barrel Brewing Company"}, {"idx": 163, "lat": 32.441286, "lng": -80.721824, "retailer": "Refuel #1059 (CHS)", "address": "4 County Shed Road, Beaufort", "cluster": 2, "color": "#f79845", "supplier": "Southern Barrel Brewing Company"}, {"idx": 164, "lat": 32.245536, "lng": -80.830243, "retailer": "Parkers #38 (CHS)", "address": "1286 Fording Island Road, Bluffton", "cluster": 4, "color": "#bd32d9", "supplier": "Southern Barrel Brewing Company"}, {"idx": 165, "lat": 32.215453, "lng": -80.721939, "retailer": "Harris Teeter #152 (CHS)", "address": "301 Main Street, Hilton Head Island", "cluster": 4, "color": "#bd32d9", "supplier": "Southern Barrel Brewing Company"}, {"idx": 166, "lat": 32.282317, "lng": -80.909965, "retailer": "Parkers #56 (CHS)", "address": "8251 Pinellas Drive, Bluffton", "cluster": 4, "color": "#bd32d9", "supplier": "Southern Barrel Brewing Company"}, {"idx": 167, "lat": 32.406338, "lng": -80.686046, "retailer": "Ribaut One Stop (CHS)", "address": "1190 Ribaut Road, Beaufort", "cluster": 2, "color": "#f79845", "supplier": "Southern Barrel Brewing Company"}, {"idx": 168, "lat": 32.185825, "lng": -80.720285, "retailer": "Kroger #671 (CHS)", "address": "42 Shelter Cove Lane, Hilton Head Island", "cluster": 4, "color": "#bd32d9", "supplier": "Southern Barrel Brewing Company"}, {"idx": 169, "lat": 32.245201, "lng": -80.977405, "retailer": "Parkers #32 (CHS)", "address": "9227 Evan Way, Bluffton", "cluster": 4, "color": "#bd32d9", "supplier": "Southern Barrel Brewing Company"}, {"idx": 170, "lat": 32.407564, "lng": -80.633156, "retailer": "Walmart #7181 (CHS)", "address": "265 Sea Island Parkway, Beaufort", "cluster": 2, "color": "#f79845", "supplier": "Southern Barrel Brewing Company"}, {"idx": 171, "lat": 32.295375, "lng": -80.944869, "retailer": "Food Lion #2691 (CHS)", "address": "210 Okatie Village Drive, Bluffton", "cluster": 4, "color": "#bd32d9", "supplier": "Southern Barrel Brewing Company"}, {"idx": 172, "lat": 32.399002, "lng": -80.683766, "retailer": "Piggly Wiggly #286 (CHS)", "address": "1347 Ribaut Road, Port Royal", "cluster": 2, "color": "#f79845", "supplier": "Southern Barrel Brewing Company"}, {"idx": 173, "lat": 32.802856, "lng": -80.118744, "retailer": "Parkers #87 (CHS)", "address": "3749 Savannah Highway, Johns Island", "cluster": 1, "color": "#0817a1", "supplier": "Southern Barrel Brewing Company"}, {"idx": 174, "lat": 32.260885, "lng": -80.867662, "retailer": "Parkers #91 (CHS)", "address": "5 Oliver Court, Bluffton", "cluster": 4, "color": "#bd32d9", "supplier": "Southern Barrel Brewing Company"}, {"idx": 175, "lat": 32.322881, "lng": -80.489096, "retailer": "Fripp Island-Marina (CHS)", "address": "875 Bonito Drive, Fripp Island", "cluster": 2, "color": "#f79845", "supplier": "Southern Barrel Brewing Company"}, {"idx": 176, "lat": 32.412208, "lng": -80.650955, "retailer": "Publix #1463 (CHS)", "address": "61 Ladys Island Drive, Beaufort", "cluster": 2, "color": "#f79845", "supplier": "Southern Barrel Brewing Company"}, {"idx": 177, "lat": 32.256607, "lng": -80.852044, "retailer": "Food Lion #1330 (CHS)", "address": "1008 Fording Island Road, Bluffton", "cluster": 4, "color": "#bd32d9", "supplier": "Southern Barrel Brewing Company"}, {"idx": 178, "lat": 32.265691, "lng": -80.910552, "retailer": "Parkers #33 (CHS)", "address": "469 Buckwalter Parkway, Bluffton", "cluster": 4, "color": "#bd32d9", "supplier": "Southern Barrel Brewing Company"}, {"idx": 179, "lat": 32.398293, "lng": -80.739847, "retailer": "Herms Beer & Wine - Beaufort (CHS)", "address": "560 Parris Island Gateway, Beaufort", "cluster": 2, "color": "#f79845", "supplier": "Southern Barrel Brewing Company"}, {"idx": 180, "lat": 32.185255, "lng": -80.756896, "retailer": "Freeport General Store (CHS)", "address": "18 Simmons Road, Hilton Head Island", "cluster": 4, "color": "#bd32d9", "supplier": "Southern Barrel Brewing Company"}];
+var BOXES   = [{"color": "#0817a1", "bounds": [[32.600548, -80.147828], [32.934126, -79.928375]]}, {"color": "#f79845", "bounds": [[32.322881, -80.977409], [32.624846, -80.466244]]}, {"color": "#226b27", "bounds": [[32.904994, -80.6612], [33.21888, -79.968441]]}, {"color": "#bd32d9", "bounds": [[32.130996, -81.056713], [32.363055, -80.694894]]}, {"color": "#a30a23", "bounds": [[32.763049, -79.909025], [33.093006, -79.479055]]}];
+var SUPPLIERS = ["Island Brands", "Rusty Bull Brewing Company", "Southern Barrel Brewing Company"];
+var CENTER  = [32.687083425414365,-80.29015132044199];
+var ORS_API_KEY = "eyJvcmciOiI1YjNjZTM1OTc4NTExMTAwMDFjZjYyNDgiLCJpZCI6ImY2OTY4YjgxYTUxMjQwYmNiNjAxNzk4ZTY4YzEyNzlhIiwiaCI6Im11cm11cjY0In0=";
+
+// ── Map ────────────────────────────────────────────────────────────────────
+var map = L.map('map', {zoomControl:true}).setView(CENTER, 12);
+L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png', {
+  attribution: '&copy; <a href="https://openstreetmap.org">OpenStreetMap</a>', maxZoom:19
+}).addTo(map);
+
+BOXES.forEach(function(b) {
+  L.rectangle(b.bounds, {
+    color:b.color, weight:1.5, opacity:0.35,
+    fill:true, fillColor:b.color, fillOpacity:0.04, dashArray:'4 4'
+  }).addTo(map);
+});
+
+// ── SUPPLIER FILTER ─────────────────────────────────────────────────────────
+var layerMap = {}, supplierVisibility = {};
+var allMarkersVisible = true;
+
+// Initialize supplier checkboxes (all checked by default)
+function initSupplierFilter() {
+  SUPPLIERS.forEach(function(supplier) {
+    supplierVisibility[supplier] = true;
+  });
+  
+  var checkboxesContainer = document.getElementById('supplier-checkboxes');
+  SUPPLIERS.forEach(function(supplier, index) {
+    var checkboxDiv = document.createElement('div');
+    checkboxDiv.className = 'supplier-checkbox';
+    checkboxDiv.innerHTML = `
+      <input type="checkbox" id="chk-${index}" checked onchange="toggleSupplier('${supplier}')">
+      <label for="chk-${index}" class="supplier-label">${supplier}</label>
+    `;
+    checkboxesContainer.appendChild(checkboxDiv);
+  });
+}
+
+// Toggle supplier visibility
+function toggleSupplier(supplier) {
+  supplierVisibility[supplier] = !supplierVisibility[supplier];
+  updateMarkerVisibility();
+}
+
+function updateMarkerVisibility() {
+  MARKERS.forEach(function(m) {
+    var circle = layerMap[m.idx];
+    if (circle) {
+      var shouldShow = supplierVisibility[m.supplier] || !allMarkersVisible;
+      if (shouldShow) {
+        circle.setStyle({radius:7, color:'#ffffff', weight:1.5, fillColor:m.color, fillOpacity:0.85});
+        circle.addTo(map);
+      } else {
+        map.removeLayer(circle);
+      }
+    }
+  });
+}
+
+// ── State ──────────────────────────────────────────────────────────────────
+var mode='close', highlightedIdx=[],
+    routeSel={}, routeOrder=[], isOptimizing=false;
+
+// ── Markers ────────────────────────────────────────────────────────────────
+MARKERS.forEach(function(m) {
+  var circle = L.circleMarker([m.lat, m.lng], {
+    radius:7, color:'#ffffff', weight:1.5, fillColor:m.color, fillOpacity:0.85
+  });
+  circle.bindTooltip(
+    '<b>'+esc(m.retailer)+'</b><br>'+
+    '<span style="color:#6b7280">Employee '+m.cluster+' | '+esc(m.supplier)+'&nbsp;&middot;&nbsp;'+esc(m.address)+'</span>',
+    {direction:'top', offset:[0,-9], sticky:false}
+  );
+  circle.on('click', function(){ onMarkerClick(m); });
+  layerMap[m.idx] = circle;
+});
+
+initSupplierFilter();
+updateMarkerVisibility();
+
+// ── Mode switching ─────────────────────────────────────────────────────────
+document.getElementById('btn-close').addEventListener('click', function(){ setMode('close'); });
+document.getElementById('btn-route').addEventListener('click', function(){ setMode('route'); });
+
+function setMode(m) {
+  mode=m;
+  document.getElementById('btn-close').classList.toggle('active', m==='close');
+  document.getElementById('btn-route').classList.toggle('active', m==='route');
+  document.getElementById('sb-left').classList.toggle('hidden',  m!=='close');
+  document.getElementById('sb-right').classList.toggle('hidden', m!=='route');
+  if(m!=='close') clearHighlights();
+}
+
+// ── Haversine ──────────────────────────────────────────────────────────────
+function hvs(lat1,lng1,lat2,lng2) {
+  var R=6371, dLat=(lat2-lat1)*Math.PI/180, dLng=(lng2-lng1)*Math.PI/180;
+  var a=Math.sin(dLat/2)*Math.sin(dLat/2)+
+        Math.cos(lat1*Math.PI/180)*Math.cos(lat2*Math.PI/180)*
+        Math.sin(dLng/2)*Math.sin(dLng/2);
+  return R*2*Math.atan2(Math.sqrt(a),Math.sqrt(1-a));
+}
+
+function clearHighlights() {
+  highlightedIdx.forEach(function(idx){
+    var m=MARKERS.find(function(x){return x.idx===idx;});
+    if(m&&layerMap[idx])
+      layerMap[idx].setStyle({radius:7,color:'#ffffff',weight:1.5,fillColor:m.color,fillOpacity:0.85});
+  });
+  highlightedIdx=[];
+}
+
+function onMarkerClick(m){ if(mode==='close') doClose(m); else doRoute(m); }
+
+// ── CLOSE LOCATION ─────────────────────────────────────────────────────────
+function doClose(src) {
+  clearHighlights();
+  var dists=MARKERS
+    .filter(function(m){return m.idx!==src.idx;})
+    .map(function(m){return{m:m,d:hvs(src.lat,src.lng,m.lat,m.lng)};})
+    .sort(function(a,b){return a.d-b.d;});
+  var top5=dists.slice(0,5);
+  layerMap[src.idx].setStyle({radius:11,color:'#1d4ed8',weight:2.5,fillColor:'#3b82f6',fillOpacity:1});
+  highlightedIdx.push(src.idx);
+  top5.forEach(function(e){
+    layerMap[e.m.idx].setStyle({radius:9,color:'#000000',weight:2,fillColor:'#ffee30',fillOpacity:1});
+    highlightedIdx.push(e.m.idx);
+  });
+  var list=document.getElementById('close-list');
+  list.innerHTML='';
+  list.appendChild(buildCloseCard(src,null,true));
+  top5.forEach(function(e){
+    var ds=e.d<1?(e.d*1000).toFixed(0)+' m':e.d.toFixed(2)+' km';
+    list.appendChild(buildCloseCard(e.m,ds,false));
+  });
+  document.getElementById('close-badge').textContent='5 shown';
+}
+
+function buildCloseCard(m,distStr,isSource) {
+  var card=document.createElement('div');
+  card.className='loc-card'+(isSource?' source-card':'');
+  var tags='<span class="tag tag-emp">Employee '+m.cluster+'</span>';
+  if(distStr)  tags+='<span class="tag tag-dist">'+distStr+' away</span>';
+  if(isSource) tags+='<span class="tag tag-src">Selected</span>';
+  card.innerHTML='<div class="card-name">'+esc(m.retailer)+'</div>'+
+    '<div class="card-tags">'+tags+'</div>'+
+    '<div class="card-addr">'+esc(m.address)+'</div>';
+  return card;
+}
+
+document.getElementById('btn-clear-close').addEventListener('click', function(){
+  clearHighlights();
+  document.getElementById('close-list').innerHTML=
+    '<div class="empty-msg"><span>Click any marker on the map<br>to find its 5 nearest neighbors.</span></div>';
+  document.getElementById('close-badge').textContent='0 shown';
+});
+
+// ── MAKE ROUTE ─────────────────────────────────────────────────────────────
+function doRoute(m) {
+  if(isOptimizing) return;
+  var key=String(m.idx);
+  if(routeSel[key]){
+    var el=document.getElementById('rc-'+key);
+    if(el){el.classList.add('flash');setTimeout(function(){el.classList.remove('flash');},700);}
+    return;
+  }
+  routeSel[key]=m; routeOrder.push(key);
+  var emp=document.getElementById('route-list').querySelector('.empty-msg');
+  if(emp) emp.remove();
+  document.getElementById('route-list').appendChild(buildRouteCard(m,routeOrder.length,key));
+  updateRouteBadge(); updateOptimizeBtn();
+}
+
+function buildRouteCard(m,num,key) {
+  var card=document.createElement('div');
+  card.className='loc-card'; card.id='rc-'+key;
+  var orderNum=document.createElement('div');
+  orderNum.className='order-num'; orderNum.textContent=num;
+  var delBtn=document.createElement('button');
+  delBtn.className='del-btn'; delBtn.title='Remove stop'; delBtn.innerHTML='&times;';
+  delBtn.addEventListener('click',function(e){e.stopPropagation();removeRoute(key);});
+  var nameEl=document.createElement('div');
+  nameEl.className='card-name'; nameEl.textContent=m.retailer; nameEl.style.paddingRight='36px';
+  var tagsEl=document.createElement('div');
+  tagsEl.className='card-tags';
+  tagsEl.innerHTML='<span class="tag tag-emp">Employee '+m.cluster+'</span><span class="tag tag-emp">'+esc(m.supplier)+'</span>';
+  var addrEl=document.createElement('div');
+  addrEl.className='card-addr'; addrEl.textContent=m.address;
+  card.appendChild(orderNum); card.appendChild(delBtn);
+  card.appendChild(nameEl); card.appendChild(tagsEl); card.appendChild(addrEl);
+  return card;
+}
+
+function removeRoute(key) {
+  if(isOptimizing||!routeSel[key]) return;
+  delete routeSel[key];
+  routeOrder=routeOrder.filter(function(k){return k!==key;});
+  var el=document.getElementById('rc-'+key);
+  if(el){
+    el.style.transition='opacity .12s ease, transform .12s ease';
+    el.style.opacity='0'; el.style.transform='translateX(10px)';
+    setTimeout(function(){
+      if(el.parentNode) el.parentNode.removeChild(el);
+      renumberCards();
+    },130);
+  }
+  if(routeOrder.length===0){
+    setTimeout(function(){
+      if(routeOrder.length===0)
+        document.getElementById('route-list').innerHTML=
+          '<div class="empty-msg"><span>No stops added yet.<br>Click markers on the map<br>to build your route.</span></div>';
+    },150);
+  }
+  updateRouteBadge(); updateOptimizeBtn();
+}
+
+function renumberCards(){
+  routeOrder.forEach(function(key,i){
+    var el=document.getElementById('rc-'+key);
+    if(el){var n=el.querySelector('.order-num');if(n)n.textContent=i+1;}
+  });
+}
+
+document.getElementById('btn-clear-route').addEventListener('click', function(){
+  if(isOptimizing) return;
+  routeSel={}; routeOrder=[];
+  document.getElementById('route-list').innerHTML=
+    '<div class="empty-msg"><span>No stops added yet.<br>Click markers on the map<br>to build your route.</span></div>';
+  updateRouteBadge(); updateOptimizeBtn();
+});
+
+function updateRouteBadge(){ document.getElementById('route-badge').textContent=routeOrder.length+' selected'; }
+function updateOptimizeBtn(){ document.getElementById('btn-optimize').disabled=routeOrder.length<2||isOptimizing; }
+
+// ── OPTIMIZE ROUTE via OpenRouteService (first stop fixed) ─────────────────
+document.getElementById('btn-optimize').addEventListener('click', optimizeRoute);
+
+function optimizeRoute() {
+  if(isOptimizing||routeOrder.length<2) return;
+
+  isOptimizing=true;
+  var btn = document.getElementById('btn-optimize');
+  btn.disabled=true;
+  btn.innerHTML='<div class="spin"></div> Optimizing…';
+
+  var stops = routeOrder.map(function(key){ return routeSel[key]; });
+
+  // keep first selected stop as fixed start/end
+  var firstStop = stops[0];
+  var firstKey  = routeOrder[0];
+
+  // jobs = all stops except the first
+  var jobs = stops.slice(1).map(function(s, i) {
+    return { id: i, location: [s.lng, s.lat] };
+  });
+
+  var payload = {
+    jobs: jobs,
+    vehicles: [{
+      id: 0,
+      profile: "driving-car",
+      start: [firstStop.lng, firstStop.lat],
+      end:   [firstStop.lng, firstStop.lat]
+    }]
+  };
+
+  fetch("https://api.openrouteservice.org/optimization", {
+    method: "POST",
+    headers: {
+      "Content-Type": "application/json",
+      "Authorization": ORS_API_KEY
+    },
+    body: JSON.stringify(payload)
+  })
+  .then(function(res) {
+    return res.json().then(function(data) {
+      if(!res.ok) {
+        var msg = (data.error && data.error.message) || JSON.stringify(data);
+        throw new Error(msg);
+      }
+      return data;
+    });
+  })
+  .then(function(data) {
+    var steps = data.routes && data.routes[0] && data.routes[0].steps;
+    if(!steps) throw new Error("No route returned from ORS");
+
+    var orderedIndices = steps
+      .filter(function(s){ return s.type === "job"; })
+      .map(function(s){ return s.id; });
+
+    if(orderedIndices.length !== stops.length - 1) {
+      throw new Error("ORS returned " + orderedIndices.length +
+                      " steps for " + (stops.length - 1) + " jobs");
+    }
+
+    applyOptimizedOrder(firstKey, orderedIndices);
+    showToast("Route optimized! 🚗", "success");
+  })
+  .catch(function(err) {
+    console.error("ORS optimize error:", err);
+    var msg = String(err.message||err);
+    if(msg.toLowerCase().includes("fetch") || msg.toLowerCase().includes("failed to fetch")) {
+      showToast("Network error — check your internet connection.", "error");
+    } else if(msg.toLowerCase().includes("403") || msg.toLowerCase().includes("401")) {
+      showToast("Invalid ORS API key — check ORS_API_KEY in the HTML.", "error");
+    } else if(msg.toLowerCase().includes("429")) {
+      showToast("ORS rate limit hit — wait a moment and try again.", "error");
+    } else {
+      showToast("Optimization error: " + msg, "error");
+    }
+    resetOptimizeBtn();
+  });
+}
+
+function applyOptimizedOrder(firstKey, order) {
+  // all current stops (in their pre-optimization order)
+  var allStops = routeOrder.map(function(key){ return routeSel[key]; });
+  // jobs correspond to all stops except the first
+  var otherStops = allStops.slice(1);
+
+  // map ORS job ids back to our keys
+  var orderedKeys = order.map(function(i) {
+    return String(otherStops[i].idx);
+  });
+
+  // prepend the original first stop so it always stays #1 in UI
+  routeOrder = [String(firstKey)].concat(orderedKeys);
+
+  var list=document.getElementById('route-list');
+  var cards=list.querySelectorAll('.loc-card');
+  cards.forEach(function(c){
+    c.style.transition='opacity .15s ease';
+    c.style.opacity='0';
+  });
+
+  setTimeout(function(){
+    list.innerHTML='';
+    routeOrder.forEach(function(key,i){
+      var m=routeSel[key];
+      var card=buildRouteCard(m,i+1,key);
+      card.classList.add('optimized');
+      var tagsEl=card.querySelector('.card-tags');
+      var optTag=document.createElement('span');
+      optTag.className='tag tag-opt';
+      optTag.textContent=(i===0 ? '✦ Start (fixed)' : '✦ Optimized');
+      tagsEl.appendChild(optTag);
+      list.appendChild(card);
+    });
+    resetOptimizeBtn();
+  },200);
+}
+
+function resetOptimizeBtn(){
+  isOptimizing=false;
+  var btn=document.getElementById('btn-optimize');
+  btn.innerHTML='<svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="10"/><path d="M12 6v6l4 2"/></svg> Optimize Route';
+  btn.disabled=routeOrder.length<2;
+}
+
+function showToast(msg,type){
+  var t=document.getElementById('toast');
+  t.textContent=msg; t.className='show '+(type||'');
+  clearTimeout(t._timer);
+  t._timer=setTimeout(function(){t.className='';},3800);
+}
+function esc(s){
+  return String(s).replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;').replace(/"/g,'&quot;');
+}
+
+setMode('close');
+</script>
+</body>
+</html>
