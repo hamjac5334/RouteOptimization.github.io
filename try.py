@@ -100,7 +100,7 @@ def compute_route_order(coords):
 num_clusters = int(input("Enter number of clusters (employees): "))
 
 # ── Load ──────────────────────────────────────────────────────────────────────
-df = pd.read_csv("CopyofSales_By_Brand_26_124_Month-5_geocodio_b82728e2fe066ceda13ba3e94e27b13649e02571.csv")
+df = pd.read_csv("Corrected_OffPremise_geocodio_02093207d60ca27effb2b569b318426f1b7e7dfb.csv")
 df = df.rename(columns={"Geocodio Latitude": "Latitude", "Geocodio Longitude": "Longitude"})
 df = df.dropna(subset=["Latitude", "Longitude"]).reset_index(drop=True)
 print("Data loaded. Total locations:", len(df))
@@ -143,15 +143,32 @@ print(f"Found {len(unique_suppliers)} unique suppliers: {unique_suppliers}")
 COLORS = ["#0817a1","#f79845","#226b27","#bd32d9","#a30a23",
           "#a335e8","#f011dd","#a30a23","#0817a1","#bd32d9"]
 
+
+grouped = (
+    df.groupby(
+        ["Retailer", "Address", "City", "Latitude", "Longitude", "Cluster"]
+    )
+    .agg({
+        "Supplier": lambda x: sorted(set(x.dropna()))
+    })
+    .reset_index()
+)
+
+
 markers_data = []
-for idx, row in df.iterrows():
+for idx, row in grouped.iterrows():
     c = int(row["Cluster"])
-    supplier = str(row.get("Supplier", "Unknown"))
+    suppliers = row["Supplier"]  # This is now a LIST
+
     markers_data.append({
-        "idx": idx, "lat": float(row["Latitude"]), "lng": float(row["Longitude"]),
-        "retailer": str(row["Retailer"]), "address": f"{row['Address']}, {row['City']}",
-        "cluster": c + 1, "color": COLORS[c % len(COLORS)],
-        "supplier": supplier  # Add supplier info to markers
+        "idx": idx,
+        "lat": float(row["Latitude"]),
+        "lng": float(row["Longitude"]),
+        "retailer": str(row["Retailer"]),
+        "address": f"{row['Address']}, {row['City']}",
+        "cluster": c + 1,
+        "color": COLORS[c % len(COLORS)],
+        "suppliers": suppliers  
     })
 
 boxes = []
@@ -428,6 +445,7 @@ html = """<!DOCTYPE html>
   <div id="mode-bar">
     <button id="btn-close" class="mode-btn active"><span class="mode-dot"></span> Close Location</button>
     <button id="btn-route" class="mode-btn"><span class="mode-dot"></span> Make Route</button>
+    <button id="btn-home" class="mode-btn"><span class="mode-dot"></span> On Premise</button>
   </div>
 </div>
 
@@ -507,6 +525,15 @@ function updateMarkerVisibility() {
     var circle = layerMap[m.idx];
     if (circle) {
       var shouldShow = supplierVisibility[m.supplier] || !allMarkersVisible;
+      var shouldShow = false;
+
+      if (Array.isArray(m.suppliers)) {
+        shouldShow = m.suppliers.some(function(s){
+        return supplierVisibility[s];
+      });
+} else {
+  shouldShow = supplierVisibility[m.suppliers];
+}
       if (shouldShow) {
         circle.setStyle({radius:7, color:'#ffffff', weight:1.5, fillColor:m.color, fillOpacity:0.85});
         circle.addTo(map);
@@ -526,11 +553,18 @@ MARKERS.forEach(function(m) {
   var circle = L.circleMarker([m.lat, m.lng], {
     radius:7, color:'#ffffff', weight:1.5, fillColor:m.color, fillOpacity:0.85
   });
-  circle.bindTooltip(
-    '<b>'+esc(m.retailer)+'</b><br>'+
-    '<span style="color:#6b7280">Employee '+m.cluster+' | '+esc(m.supplier)+'&nbsp;&middot;&nbsp;'+esc(m.address)+'</span>',
-    {direction:'top', offset:[0,-9], sticky:false}
-  );
+var supplierList = Array.isArray(m.suppliers)
+  ? m.suppliers.join(", ")
+  : m.suppliers;
+
+circle.bindTooltip(
+  '<b>'+esc(m.retailer)+'</b><br>'+
+  '<span style="color:#6b7280">Employee '+m.cluster+
+  ' | Suppliers: '+esc(supplierList)+
+  ' · '+esc(m.address)+'</span>',
+  {direction:'top', offset:[0,-9], sticky:false}
+);
+
   circle.on('click', function(){ onMarkerClick(m); });
   layerMap[m.idx] = circle;
 });
@@ -546,6 +580,11 @@ function setMode(m) {
   mode=m;
   document.getElementById('btn-close').classList.toggle('active', m==='close');
   document.getElementById('btn-route').classList.toggle('active', m==='route');
+
+  document.getElementById('btn-home').addEventListener('click', function () {
+  window.location.href = 'RouteOptimization_OnPremise_Map.html';
+});
+
   document.getElementById('sb-left').classList.toggle('hidden',  m!=='close');
   document.getElementById('sb-right').classList.toggle('hidden', m!=='route');
   if(m!=='close') clearHighlights();
