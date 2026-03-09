@@ -96,16 +96,53 @@ def compute_route_order(coords):
         visited.append(int(np.argmin(row)))
     return visited
 
-# ── Input ─────────────────────────────────────────────────────────────────────
+# Load Visit Reports 
+visits = pd.read_csv("visits_report_2026-03-09-2.csv")
+
+# Convert date column
+visits["Visit Date"] = pd.to_datetime(visits["Visit Date"], errors="coerce")
+
+# Get most recent visit per business
+visits_latest = (
+    visits.sort_values("Visit Date")
+    .groupby("Business Name")
+    .tail(1)
+)
+
+# Map retailer → visit date
+visit_map = dict(zip(visits_latest["Business Name"], visits_latest["Visit Date"]))
+
+today = pd.Timestamp.today()
+
+def get_visit_color(retailer):
+    visit_date = visit_map.get(retailer)
+
+    if pd.isna(visit_date):
+        return "#7f1d1d"  # dark red if no visit
+
+    days = (today - visit_date).days
+
+    if days <= 7:
+        return "#16a34a"   
+    elif days <= 14:
+        return "#f97316"    
+    elif days <= 21:
+        return "#fc1414"  
+    else:
+        return "#7f1d1d"   
+
+
+
+# Input 
 num_clusters = int(input("Enter number of clusters (employees): "))
 
-# ── Load ──────────────────────────────────────────────────────────────────────
+# Load
 df = pd.read_csv("Corrected_OffPremise_geocodio_02093207d60ca27effb2b569b318426f1b7e7dfb.csv")
 df = df.rename(columns={"Geocodio Latitude": "Latitude", "Geocodio Longitude": "Longitude"})
 df = df.dropna(subset=["Latitude", "Longitude"]).reset_index(drop=True)
 print("Data loaded. Total locations:", len(df))
 
-# ── Clustering ────────────────────────────────────────────────────────────────
+# Clustering
 transformer = Transformer.from_crs("epsg:4326", "epsg:3857", always_xy=True)
 proj = np.array([transformer.transform(lon, lat)
                  for lat, lon in zip(df["Latitude"], df["Longitude"])])
@@ -114,7 +151,7 @@ df["Cluster"] = kmeans.fit_predict(proj)
 print("\\nCluster counts:")
 print(df["Cluster"].value_counts().sort_index())
 
-# ── Routing ───────────────────────────────────────────────────────────────────
+# Routing
 print("\\nComputing routes...")
 route_output = []
 for cluster_id, group in df.groupby("Cluster"):
@@ -136,7 +173,7 @@ route_df = route_df[excel_cols].sort_values(["Cluster", "Visit Order"]).reset_in
 route_df.to_excel("Optimized_Routes_By_Cluster.xlsx", index=False)
 print("✓ Excel saved!")
 
-# ── Get unique suppliers for checkboxes ────────────────────────────────────────
+# Get Suppliers
 unique_suppliers = sorted(df["Supplier"].dropna().unique())
 print(f"Found {len(unique_suppliers)} unique suppliers: {unique_suppliers}")
 
@@ -158,7 +195,9 @@ grouped = (
 markers_data = []
 for idx, row in grouped.iterrows():
     c = int(row["Cluster"])
-    suppliers = row["Supplier"]  # This is now a LIST
+    suppliers = row["Supplier"]
+
+    visit_color = get_visit_color(row["Retailer"])
 
     markers_data.append({
         "idx": idx,
@@ -168,7 +207,8 @@ for idx, row in grouped.iterrows():
         "address": f"{row['Address']}, {row['City']}",
         "cluster": c + 1,
         "color": COLORS[c % len(COLORS)],
-        "suppliers": suppliers  
+        "visit_color": visit_color,
+        "suppliers": suppliers
     })
 
 boxes = []
@@ -185,7 +225,7 @@ markers_json = json.dumps(markers_data)
 boxes_json   = json.dumps(boxes)
 suppliers_json = json.dumps(unique_suppliers)
 
-# ── HTML ──────────────────────────────────────────────────────────────────────
+# HTML
 html = """<!DOCTYPE html>
 <html lang="en">
 <head>
@@ -444,6 +484,7 @@ html = """<!DOCTYPE html>
   <div id="map"></div>
   <div id="mode-bar">
     <button id="btn-close" class="mode-btn active"><span class="mode-dot"></span> Close Location</button>
+    <button id="btn-visits" class="mode-btn"><span class="mode-dot"></span> Visit Status</button>
     <button id="btn-route" class="mode-btn"><span class="mode-dot"></span> Make Route</button>
     <button id="btn-home" class="mode-btn"><span class="mode-dot"></span> On Premise</button>
   </div>
@@ -478,8 +519,44 @@ var BOXES   = """ + boxes_json   + """;
 var SUPPLIERS = """ + suppliers_json + """;
 var CENTER  = [""" + str(center_lat) + "," + str(center_lng) + """];
 var ORS_API_KEY = "eyJvcmciOiI1YjNjZTM1OTc4NTExMTAwMDFjZjYyNDgiLCJpZCI6ImY2OTY4YjgxYTUxMjQwYmNiNjAxNzk4ZTY4YzEyNzlhIiwiaCI6Im11cm11cjY0In0=";
+var visitMode = false;
 
-// ── Map ────────────────────────────────────────────────────────────────────
+
+function applyClusterColors() {
+  MARKERS.forEach(function(m) {
+    var circle = layerMap[m.idx];
+    if(circle){
+      circle.setStyle({
+        radius:7,
+        color:'#ffffff',
+        weight:1.5,
+        fillColor:m.color,
+        fillOpacity:0.85
+      });
+    }
+  });
+}
+
+function applyVisitColors() {
+  MARKERS.forEach(function(m) {
+    var circle = layerMap[m.idx];
+    if(circle){
+      circle.setStyle({
+        radius:7,
+        color:'#ffffff',
+        weight:1.5,
+        fillColor:m.visit_color,
+        fillOpacity:0.9
+      });
+    }
+  });
+}
+
+
+
+
+
+// Map 
 var map = L.map('map', {zoomControl:true}).setView(CENTER, 12);
 L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png', {
   attribution: '&copy; <a href="https://openstreetmap.org">OpenStreetMap</a>', maxZoom:19
@@ -492,7 +569,7 @@ BOXES.forEach(function(b) {
   }).addTo(map);
 });
 
-// ── SUPPLIER FILTER ─────────────────────────────────────────────────────────
+// SUPPLIER FILTER
 var layerMap = {}, supplierVisibility = {};
 var allMarkersVisible = true;
 
@@ -524,8 +601,15 @@ function updateMarkerVisibility() {
   MARKERS.forEach(function(m) {
     var circle = layerMap[m.idx];
     if (circle) {
-      var shouldShow = supplierVisibility[m.supplier] || !allMarkersVisible;
       var shouldShow = false;
+
+      if (Array.isArray(m.suppliers)) {
+        shouldShow = m.suppliers.some(function(s){
+          return supplierVisibility[s];
+        });
+      } else {
+        shouldShow = supplierVisibility[m.suppliers];
+      }
 
       if (Array.isArray(m.suppliers)) {
         shouldShow = m.suppliers.some(function(s){
@@ -544,11 +628,11 @@ function updateMarkerVisibility() {
   });
 }
 
-// ── State ──────────────────────────────────────────────────────────────────
+// State 
 var mode='close', highlightedIdx=[],
     routeSel={}, routeOrder=[], isOptimizing=false;
 
-// ── Markers ────────────────────────────────────────────────────────────────
+// Markers
 MARKERS.forEach(function(m) {
   var circle = L.circleMarker([m.lat, m.lng], {
     radius:7, color:'#ffffff', weight:1.5, fillColor:m.color, fillOpacity:0.85
@@ -572,9 +656,23 @@ circle.bindTooltip(
 initSupplierFilter();
 updateMarkerVisibility();
 
-// ── Mode switching ─────────────────────────────────────────────────────────
+// Mode switching 
 document.getElementById('btn-close').addEventListener('click', function(){ setMode('close'); });
 document.getElementById('btn-route').addEventListener('click', function(){ setMode('route'); });
+document.getElementById('btn-visits').addEventListener('click', function(){
+
+    visitMode = !visitMode;
+
+    if (visitMode) {
+        applyVisitColors();
+        this.style.background = "#111827";
+        this.style.color = "white";
+  } else {
+        applyClusterColors();
+        this.style.background = "white";
+        this.style.color = "#374151";
+  }
+});
 
 function setMode(m) {
   mode=m;
@@ -590,7 +688,7 @@ function setMode(m) {
   if(m!=='close') clearHighlights();
 }
 
-// ── Haversine ──────────────────────────────────────────────────────────────
+// Haversine
 function hvs(lat1,lng1,lat2,lng2) {
   var R=6371, dLat=(lat2-lat1)*Math.PI/180, dLng=(lng2-lng1)*Math.PI/180;
   var a=Math.sin(dLat/2)*Math.sin(dLat/2)+
@@ -610,7 +708,7 @@ function clearHighlights() {
 
 function onMarkerClick(m){ if(mode==='close') doClose(m); else doRoute(m); }
 
-// ── CLOSE LOCATION ─────────────────────────────────────────────────────────
+// CLOSE LOCATION
 function doClose(src) {
   clearHighlights();
   var dists=MARKERS
@@ -653,7 +751,7 @@ document.getElementById('btn-clear-close').addEventListener('click', function(){
   document.getElementById('close-badge').textContent='0 shown';
 });
 
-// ── MAKE ROUTE ─────────────────────────────────────────────────────────────
+// MAKE ROUTE
 function doRoute(m) {
   if(isOptimizing) return;
   var key=String(m.idx);
@@ -730,7 +828,7 @@ document.getElementById('btn-clear-route').addEventListener('click', function(){
 function updateRouteBadge(){ document.getElementById('route-badge').textContent=routeOrder.length+' selected'; }
 function updateOptimizeBtn(){ document.getElementById('btn-optimize').disabled=routeOrder.length<2||isOptimizing; }
 
-// ── OPTIMIZE ROUTE via OpenRouteService (first stop fixed) ─────────────────
+// OPTIMIZE ROUTE via OpenRouteService 
 document.getElementById('btn-optimize').addEventListener('click', optimizeRoute);
 
 function optimizeRoute() {
