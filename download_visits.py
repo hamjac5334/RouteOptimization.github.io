@@ -101,36 +101,9 @@ def download_visits_report(
 
         # Locate and click export button inside Shadow DOM
         print("Locating export button...")
-
-        # First, wait for the host element
-        export_btn_host = wait.until(
-            EC.presence_of_element_located((By.ID, "btnExport"))
+        download_btn = wait.until(
+            EC.element_to_be_clickable((By.ID, "btnExport"))
         )
-
-        # Try to get an open shadow root, if any
-        export_btn_root = driver.execute_script(
-            "return arguments[0].shadowRoot", export_btn_host
-        )
-
-        if export_btn_root:
-            print("Shadow root found for btnExport; looking for button.button inside it.")
-            download_btn = export_btn_root.find_element(
-                By.CSS_SELECTOR, "button.button"
-            )
-        else:
-            print("No shadow root found; trying to click btnExport directly.")
-            download_btn = export_btn_host  # fall back to host element
-
-        # Click export
-        try:
-            download_btn.click()
-        except Exception:
-            print("Standard click failed, trying JavaScript click.")
-            driver.execute_script("arguments[0].scrollIntoView(true);", download_btn)
-            time.sleep(1)
-            driver.execute_script("arguments[0].click();", download_btn)
-
-        
 
         try:
             download_btn.click()
@@ -140,7 +113,7 @@ def download_visits_report(
             time.sleep(1)
             driver.execute_script("arguments[0].click();", download_btn)
 
-
+        # Wait for the download to complete
         print("Export clicked, waiting for download...")
         time.sleep(wait_seconds)  # may need tuning for large reports
 
