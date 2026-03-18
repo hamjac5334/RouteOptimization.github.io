@@ -140,13 +140,8 @@ def download_visits_report(
             time.sleep(1)
             driver.execute_script("arguments[0].click();", download_btn)
 
-        # Choose CSV format (btnDoExport → CSV menu item)
-        csv_option = wait.until(
-            EC.element_to_be_clickable((By.CSS_SELECTOR, '.ews-menu-item[format="CSV"]'))
-        )
-        csv_option.click()
-        print("Export clicked, waiting for download...")
 
+        print("Export clicked, waiting for download...")
         time.sleep(wait_seconds)  # may need tuning for large reports
 
     finally:
