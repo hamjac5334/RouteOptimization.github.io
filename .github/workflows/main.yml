@@ -25,14 +25,14 @@ jobs:
         BT_USERNAME: ${{ secrets.BT_USERNAME }}
         BT_PASSWORD: ${{ secrets.BT_PASSWORD }}
       run: |
-        python scripts/download_visits.py
+        python download_visits.py
         # Outputs: VisitsData/VisitsReport_YYYY-MM-DD_HH-MM-SS.csv
 
     - name: Generate clustered map HTML
       run: |
         # Find latest visits CSV
-        LATEST_CSV=$(ls -t scripts/VisitsData/*.csv | head -1)
-        sed "s|visitsreport2026-03-09-2.csv|$LATEST_CSV|g" scripts/try.py > temp_try.py
+        LATEST_CSV=$(ls -t VisitsData/*.csv | head -1)
+        sed "s|visitsreport2026-03-09-2.csv|$LATEST_CSV|g" try.py > temp_try.py
         python temp_try.py
         rm temp_try.py
         # Outputs: RouteOptimization_Clustered_Map.html
@@ -40,13 +40,13 @@ jobs:
     - name: Generate on-premise map HTML  
       run: |
         # Repeat for try2.py (adjust hardcoded CSV path if needed)
-        LATEST_CSV=$(ls -t scripts/VisitsData/*.csv | head -1)
+        LATEST_CSV=$(ls -t VisitsData/*.csv | head -1)
         # ... similar sed + python for try2.py ...
 
     - name: Commit and push updates
       run: |
         git config user.name "github-actions[bot]"
         git config user.email "github-actions[bot]@users.noreply.github.com"
-        git add *.html scripts/VisitsData/
+        git add *.html VisitsData/
         git commit -m "Nightly update: new visits data & maps [skip ci]" || echo "No changes"
         git push
