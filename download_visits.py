@@ -122,14 +122,16 @@ def download_visits_report(
 
     # Find newest file in DOWNLOAD_DIR
     files = [
-        os.path.join(DOWNLOAD_DIR, f)
-        for f in os.listdir(DOWNLOAD_DIR)
-        if os.path.isfile(os.path.join(DOWNLOAD_DIR, f))
+    os.path.join(DOWNLOAD_DIR, f)
+    for f in os.listdir(DOWNLOAD_DIR)
+    if os.path.isfile(os.path.join(DOWNLOAD_DIR, f))
     ]
     if not files:
+        # Debug: print tree to see where the file might be
+        print("No files in DOWNLOAD_DIR:", DOWNLOAD_DIR)
+        print("Current working dir:", os.getcwd())
+        print("Entries in cwd:", os.listdir("."))
         raise FileNotFoundError("No file found in download directory.")
-
-    newest_file = max(files, key=os.path.getctime)
 
     # Rename file with timestamp
     timestamp = datetime.now().strftime("%Y-%m-%d_%H-%M-%S")
