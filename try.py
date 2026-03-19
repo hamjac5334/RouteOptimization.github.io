@@ -103,7 +103,18 @@ if len(sys.argv) > 1:
 else:
     visits_file = "visitsreport2026-03-09-2.csv"
 
-visits = pd.read_csv(visits_file)
+visits = pd.read_csv(
+    visits_file,
+    on_bad_lines="skip",      # skip malformed rows
+    low_memory=False,
+    dtype=str,                # read everything as string first
+    quotechar='"',            # handle quoted fields
+    escapechar="\\"
+)
+print(f"Loaded {len(visits)} rows from {visits_file}")
+print("Columns:", visits.columns.tolist())
+print("First few rows:")
+print(visits.head())
 
 # Convert date column
 visits["Visit Date"] = pd.to_datetime(visits["Visit Date"], errors="coerce")
