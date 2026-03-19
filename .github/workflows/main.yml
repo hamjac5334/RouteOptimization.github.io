@@ -33,6 +33,7 @@ jobs:
     - name: Generate clustered map HTML (index.html)
       run: |
         LATEST_CSV="${{ steps.download.outputs.csv_path }}"
+        python try.py "$LATEST_CSV"
         sed "s|visitsreport2026-03-09-2.csv|$LATEST_CSV|g" try.py > temp_try.py
         # Rename output file from RouteOptimization_Clustered_Map.html → index.html
         sed -i 's|with open("RouteOptimization_Clustered_Map.html"|with open("index.html"|g' temp_try.py
@@ -42,6 +43,7 @@ jobs:
     - name: Generate on-premise map HTML (RouteOptimization_OnPremise_Map.html)
       run: |
         LATEST_CSV="${{ steps.download.outputs.csv_path }}"
+        python try2.py "$LATEST_CSV"
         sed "s|visitsreport2026-03-09-2.csv|$LATEST_CSV|g" try2.py > temp_try2.py
         # Rename output file from RouteOptimization_OnPremise_Map.html → RouteOptimization_OnPremise_Map.html
         sed -i 's|with open("RouteOptimization_OnPremise_Map.html"|with open("RouteOptimization_OnPremise_Map.html"|g' temp_try2.py
