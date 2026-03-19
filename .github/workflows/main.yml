@@ -33,12 +33,11 @@ jobs:
     - name: Generate clustered map HTML (index.html)
       run: |
         LATEST_CSV="${{ steps.download.outputs.csv_path }}"
+        echo "Latest CSV: $LATEST_CSV"
+        # Preview first 15 lines to debug
+        head -15 "$LATEST_CSV"
+        # Fix CSV parsing issues and generate map
         python try.py "$LATEST_CSV"
-        sed "s|visitsreport2026-03-09-2.csv|$LATEST_CSV|g" try.py > temp_try.py
-        # Rename output file from RouteOptimization_Clustered_Map.html → index.html
-        sed -i 's|with open("RouteOptimization_Clustered_Map.html"|with open("index.html"|g' temp_try.py
-        python temp_try.py
-        rm temp_try.py
 
     - name: Generate on-premise map HTML (RouteOptimization_OnPremise_Map.html)
       run: |
