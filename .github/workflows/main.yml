@@ -1,58 +1,59 @@
 name: Nightly Map Update
-
 on:
   schedule:
-    - cron: "0 6 * * *"     # 6am UTC daily
-  workflow_dispatch:         # manual trigger from GitHub UI
+    - cron: "0 6 * * *"
+  workflow_dispatch:
 
 jobs:
   update-maps:
     runs-on: ubuntu-latest
-
     steps:
     - uses: actions/checkout@v4
 
     - name: Set up Python
       uses: actions/setup-python@v5
       with:
-        python-version: 3.11
+        python-version: "3.11"
 
     - name: Install dependencies
       run: pip install -r requirements.txt
 
+    - name: Install Chrome
+      run: |
+        wget -q -O - https://dl.google.com/linux/linux_signing_key.pub | sudo apt-key add -
+        sudo sh -c 'echo "deb [arch=amd64] http://dl.google.com/linux/chrome/deb/ stable main" > /etc/apt/sources.list.d/google-chrome.list'
+        sudo apt-get update && sudo apt-get install -y google-chrome-stable
+
     - name: Download latest visits CSV
-      id: download
       env:
         BT_USERNAME: ${{ secrets.BT_USERNAME }}
         BT_PASSWORD: ${{ secrets.BT_PASSWORD }}
-      run: |
-        python download_visits.py
-        LATEST_CSV=$(ls -t VisitsData/*.csv | head -1)
-        echo "csv_path=$LATEST_CSV" >> $GITHUB_OUTPUT
+      run: python download_visits.py
 
-    - name: Generate clustered map HTML (index.html)
+    - name: Verify CSV downloaded
       run: |
-        LATEST_CSV="${{ steps.download.outputs.csv_path }}"
-        echo "Latest CSV: $LATEST_CSV"
-        # Preview first 15 lines to debug
-        head -15 "$LATEST_CSV"
-        # Fix CSV parsing issues and generate map
-        python try.py "$LATEST_CSV"
+        ls -lh VisitsData/
+        LATEST=$(ls -t VisitsData/*.csv | head -1)
+        echo "Found: $LATEST"
+        head -5 "$LATEST"
 
-    - name: Generate on-premise map HTML (RouteOptimization_OnPremise_Map.html)
+    - name: Generate clustered map (index.html)
       run: |
-        LATEST_CSV="${{ steps.download.outputs.csv_path }}"
-        python try2.py "$LATEST_CSV"
-        sed "s|visitsreport2026-03-09-2.csv|$LATEST_CSV|g" try2.py > temp_try2.py
-        # Rename output file from RouteOptimization_OnPremise_Map.html → RouteOptimization_OnPremise_Map.html
-        sed -i 's|with open("RouteOptimization_OnPremise_Map.html"|with open("RouteOptimization_OnPremise_Map.html"|g' temp_try2.py
-        python temp_try2.py
-        rm temp_try2.py
+        LATEST=$(ls -t VisitsData/*.csv | head -1)
+        echo "Using CSV: $LATEST"
+        python try.py "$LATEST"
+
+    - name: Generate on-premise map (RouteOptimization_OnPremise_Map.html)
+      run: |
+        LATEST=$(ls -t VisitsData/*.csv | head -1)
+        echo "Using CSV: $LATEST"
+        python try2.py "$LATEST"
 
     - name: Commit and push updates
       run: |
         git config user.name "github-actions[bot]"
         git config user.email "github-actions[bot]@users.noreply.github.com"
         git add index.html RouteOptimization_OnPremise_Map.html VisitsData/
-        git commit -m "Nightly update [skip ci]" || echo "No changes"
+        git status
+        git commit -m "Nightly update $(date +'%Y-%m-%d') [skip ci]" || echo "No changes to commit"
         git push
