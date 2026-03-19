@@ -62,26 +62,32 @@ def download_visits_report():
         time.sleep(5)
         
         # Step 2: Extract cookies and create requests session
-        print("Extracting session cookies...")
-        selenium_cookies = driver.get_cookies()
-        session = requests.Session()
-        
-        for cookie in selenium_cookies:
-            session.cookies.set(cookie['name'], cookie['value'])
-        
-        # Add user agent to match browser
-        session.headers.update({
-            'User-Agent': 'Mozilla/5.0 (X11; Linux x86_64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36'
-        })
-        
-        # Step 3: Direct HTTP POST to export endpoint (no download dir issues!)
-        print("Downloading CSV via HTTP...")
-        export_response = session.post(
-            "https://bogmayer.bevtrack.net/reports-visits",
-            data={"format": "csv"},  # adjust if needed from your filters
-            timeout=60
-        )
-        export_response.raise_for_status()
+        print("Downloading CSV via exact browser request...")
+
+# EXACT endpoint + headers from your screenshot
+export_response = session.post(
+    "https://bogmayer.bevtrack.net/exportVisits.php",  # ← Correct endpoint!
+    headers={
+        'Content-Type': 'application/json',           # ← JSON, not form data!
+        'X-Requested-With': 'XMLHttpRequest',
+        'Origin': 'https://bogmayer.bevtrack.net',
+        'Referer': 'https://bogmayer.bevtrack.net/reports-visits',
+        'User-Agent': 'Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/145.0.0.0 Safari/537.36',
+    },
+    json={"format": "csv"},  # ← This 159KB JSON payload gets auto-serialized
+    timeout=120              # Large payload needs more time
+)
+export_response.raise_for_status()
+
+# Verify CSV content
+content_preview = export_response.content[:500].decode('utf-8', errors='ignore')
+if '<!DOCTYPE html>' in content_preview or '<html' in content_preview:
+    print("ERROR: Got HTML. Need exact 159KB JSON payload.")
+    raise RuntimeError("HTML instead of CSV")
+
+print(f"Saved {len(export_response.content)} bytes")
+with open(filepath, "wb") as f:
+    f.write(export_response.content))
         
         # Step 4: Save file directly (bypasses Chrome download entirely)
         timestamp = datetime.now().strftime("%Y-%m-%d_%H-%M-%S")
