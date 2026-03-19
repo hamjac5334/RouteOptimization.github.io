@@ -40,25 +40,28 @@ jobs:
     - name: Debug visit date matching
       run: |
         python3 - <<'EOF'
-        import sys, os, glob, pandas as pd
+        import os, glob, pandas as pd
 
         csv_files = glob.glob("VisitsData/*.csv")
         visits_file = max(csv_files, key=os.path.getmtime)
         print(f"\n=== CSV FILE: {visits_file} ===")
 
         visits = pd.read_csv(visits_file, quotechar='"', on_bad_lines='skip', low_memory=False)
-        print(f"Shape: {visits.shape}")
-        print(f"Columns: {list(visits.columns)}")
 
         print(f"\n=== RAW 'Visit Date' SAMPLE ===")
-        print(visits['Visit Date'].head(10).tolist())
+        print(visits['Visit Date'].head(5).tolist())
 
-        visits["Visit Date"] = pd.to_datetime(visits["Visit Date"], errors="coerce")
+        # Strip the ET suffix before parsing
+        visits["Visit Date"] = pd.to_datetime(
+            visits["Visit Date"].str.replace(r'ET$', '', regex=True).str.strip(),
+            format="%m/%d/%y %H:%M:%S",
+            errors="coerce"
+        )
+
         print(f"\n=== PARSED 'Visit Date' SAMPLE ===")
-        print(visits['Visit Date'].head(10).tolist())
+        print(visits['Visit Date'].head(5).tolist())
         print(f"NaT count: {visits['Visit Date'].isna().sum()} / {len(visits)}")
 
-        print(f"\n=== MOST RECENT VISITS ===")
         visits["Business Name"] = visits["Business Name"].str.strip()
         visits_latest = (
             visits.dropna(subset=["Visit Date"])
@@ -67,14 +70,10 @@ jobs:
             .last()
         )
         print(f"Unique businesses with valid dates: {len(visits_latest)}")
-        print(visits_latest[["Business Name","Visit Date"]].tail(10).to_string())
 
         today = pd.Timestamp.today().normalize()
-        print(f"\n=== TODAY: {today} ===")
+        print(f"Today: {today}")
         visits_latest["days_ago"] = (today - visits_latest["Visit Date"].dt.normalize()).dt.days
-        print(visits_latest[["Business Name","Visit Date","days_ago"]].tail(10).to_string())
-        print(f"\nMin days ago: {visits_latest['days_ago'].min()}")
-        print(f"Max days ago: {visits_latest['days_ago'].max()}")
 
         def bucket(d):
             if d <= 7:   return "green (<=7d)"
@@ -85,8 +84,9 @@ jobs:
         visits_latest["color"] = visits_latest["days_ago"].apply(bucket)
         print(f"\n=== COLOR DISTRIBUTION ===")
         print(visits_latest["color"].value_counts().to_string())
+        print(f"\n=== SAMPLE WITH DAYS ===")
+        print(visits_latest[["Business Name","Visit Date","days_ago"]].tail(10).to_string())
         EOF
-
     - name: Generate clustered map (index.html)
       run: |
         LATEST=$(ls -t VisitsData/*.csv | head -1)
