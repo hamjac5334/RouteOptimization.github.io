@@ -77,7 +77,7 @@ def download_visits_report():
         # Step 3: Direct HTTP POST to export endpoint (no download dir issues!)
         print("Downloading CSV via HTTP...")
         export_response = session.post(
-            "https://bogmayer.bevtrack.net/reports/export",
+            "https://bogmayer.bevtrack.net/reports-visits",
             data={"format": "csv"},  # adjust if needed from your filters
             timeout=60
         )
