@@ -133,7 +133,7 @@ def get_visit_color(retailer):
 
 
 # Input 
-num_clusters = int(input("Enter number of clusters (employees): "))
+num_clusters = 5
 
 # Load
 df = pd.read_csv("Corrected_OnPremise_geocodio_6374dbcbfa65642924f84331d8d4bf80865cf20b.csv")
