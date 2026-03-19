@@ -93,7 +93,14 @@ def compute_route_order(coords):
             row[v] = np.inf
         visited.append(int(np.argmin(row)))
     return visited
-visits = pd.read_csv("visits_report_2026-03-09-2.csv")
+
+
+if len(sys.argv) > 1:
+    visits_file = sys.argv[1]
+else:
+    visits_file = "visitsreport2026-03-09-2.csv"
+
+visits = pd.read_csv(visits_file)
 
 # Convert date column
 visits["Visit Date"] = pd.to_datetime(visits["Visit Date"], errors="coerce")
