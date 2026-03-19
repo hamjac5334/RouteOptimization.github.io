@@ -21,32 +21,37 @@ jobs:
       run: pip install -r requirements.txt
 
     - name: Download latest visits CSV
+      id: download
       env:
         BT_USERNAME: ${{ secrets.BT_USERNAME }}
         BT_PASSWORD: ${{ secrets.BT_PASSWORD }}
       run: |
         python download_visits.py
-        # Outputs: VisitsData/VisitsReport_YYYY-MM-DD_HH-MM-SS.csv
-
-    - name: Generate clustered map HTML
-      run: |
-        # Find latest visits CSV
         LATEST_CSV=$(ls -t VisitsData/*.csv | head -1)
+        echo "csv_path=$LATEST_CSV" >> $GITHUB_OUTPUT
+
+    - name: Generate clustered map HTML (input.html)
+      run: |
+        LATEST_CSV="${{ steps.download.outputs.csv_path }}"
         sed "s|visitsreport2026-03-09-2.csv|$LATEST_CSV|g" try.py > temp_try.py
+        # Rename output file from RouteOptimization_Clustered_Map.html → input.html
+        sed -i 's|with open("RouteOptimization_Clustered_Map.html"|with open("input.html"|g' temp_try.py
         python temp_try.py
         rm temp_try.py
-        # Outputs: RouteOptimization_Clustered_Map.html
 
-    - name: Generate on-premise map HTML  
+    - name: Generate on-premise map HTML (RouteOptimization_OnPremise.html)
       run: |
-        # Repeat for try2.py (adjust hardcoded CSV path if needed)
-        LATEST_CSV=$(ls -t VisitsData/*.csv | head -1)
-        # ... similar sed + python for try2.py ...
+        LATEST_CSV="${{ steps.download.outputs.csv_path }}"
+        sed "s|visitsreport2026-03-09-2.csv|$LATEST_CSV|g" try2.py > temp_try2.py
+        # Rename output file from RouteOptimization_OnPremise_Map.html → RouteOptimization_OnPremise.html
+        sed -i 's|with open("RouteOptimization_OnPremise_Map.html"|with open("RouteOptimization_OnPremise.html"|g' temp_try2.py
+        python temp_try2.py
+        rm temp_try2.py
 
     - name: Commit and push updates
       run: |
         git config user.name "github-actions[bot]"
         git config user.email "github-actions[bot]@users.noreply.github.com"
-        git add *.html VisitsData/
+        git add input.html RouteOptimization_OnPremise.html VisitsData/
         git commit -m "Nightly update: new visits data & maps [skip ci]" || echo "No changes"
         git push
