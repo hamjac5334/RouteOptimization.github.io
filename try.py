@@ -121,7 +121,11 @@ print(f"Loaded {len(visits)} visits rows, columns: {list(visits.columns)}")
 print("Visit Date sample:", visits['Visit Date'].head().tolist())
 
 # Convert date column
-visits["Visit Date"] = pd.to_datetime(visits["Visit Date"], errors="coerce")
+visits["Visit Date"] = pd.to_datetime(
+    visits["Visit Date"].str.replace(r'ET$', '', regex=True).str.strip(),
+    format="%m/%d/%y %H:%M:%S",
+    errors="coerce"
+)
 
 # Get most recent visit per business
 visits_latest = (
