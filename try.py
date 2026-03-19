@@ -19,6 +19,7 @@ import json
 from sklearn.cluster import KMeans
 from pyproj import Transformer
 import warnings
+import glob
 warnings.filterwarnings("ignore")
 
 GOOGLE_API_KEY = "AIzaSyDSd-fc2wicMn2lT5L6MA5ikQrq6EPV0PQ"
@@ -101,7 +102,12 @@ def compute_route_order(coords):
 if len(sys.argv) > 1:
     visits_file = sys.argv[1]
 else:
-    visits_file = "visitsreport2026-03-09-2.csv"
+    # Auto-find the most recently downloaded CSV in VisitsData/
+    csv_files = glob.glob(os.path.join("VisitsData", "*.csv"))
+    if not csv_files:
+        raise FileNotFoundError("No CSV found in VisitsData/ — run download_visits.py first")
+    visits_file = max(csv_files, key=os.path.getmtime)
+    print(f"Auto-selected latest visits file: {visits_file}")
 
 visits = pd.read_csv(
     visits_file,
