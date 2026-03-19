@@ -105,18 +105,14 @@ else:
 
 visits = pd.read_csv(
     visits_file,
-    on_bad_lines="skip",      # skip malformed rows
-    low_memory=False,
-    dtype=str,                # read everything as string first
-    quotechar='"',            # handle quoted fields
-    escapechar="\\"
+    quotechar='"',           # Handles quoted fields with commas/URLs
+    quoting=0,               # QUOTE_MINIMAL
+    escapechar='\\',
+    on_bad_lines='skip',     # Skip malformed rows
+    low_memory=False
 )
-
-
-print(f"Loaded {len(visits)} rows from {visits_file}")
-print("Columns:", visits.columns.tolist())
-print("First few rows:")
-print(visits.head())
+print(f"Loaded {len(visits)} visits rows, columns: {list(visits.columns)}")
+print("Visit Date sample:", visits['Visit Date'].head().tolist())
 
 # Convert date column
 visits["Visit Date"] = pd.to_datetime(visits["Visit Date"], errors="coerce")
