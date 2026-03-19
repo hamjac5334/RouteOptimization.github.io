@@ -76,23 +76,18 @@ def download_visits_report():
 
         # FIX 3: Set the date range to TODAY before exporting
         # Adjust these selectors to match the actual fields on the page
-        try:
-            today = datetime.now().strftime("%m/%d/%Y")
-            start_date = driver.find_element(By.ID, "startDate")  # update selector
-            end_date = driver.find_element(By.ID, "endDate")      # update selector
-            start_date.clear()
-            start_date.send_keys(today)
-            end_date.clear()
-            end_date.send_keys(today)
-            # If there's an "Apply" or "Filter" button, click it here
-            print(f"Date range set to {today}")
-            time.sleep(2)
-        except Exception as e:
-            print(f"Warning: could not set date range ({e}) — export may use default range")
-
+        
         print("Clicking export...")
+        print("Clicking export button...")
         download_btn = wait.until(EC.element_to_be_clickable((By.ID, "btnExport")))
         download_btn.click()
+
+        # Wait for the modal to appear, then click the confirm Export button
+        print("Clicking confirm export in modal...")
+        confirm_btn = wait.until(EC.element_to_be_clickable((By.ID, "btnDoExport")))
+        confirm_btn.click()
+
+print("Export confirmed, waiting for CSV...")
 
     finally:
         # FIX 4: Wait for the new file specifically, then quit
