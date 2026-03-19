@@ -111,6 +111,8 @@ visits = pd.read_csv(
     quotechar='"',            # handle quoted fields
     escapechar="\\"
 )
+
+
 print(f"Loaded {len(visits)} rows from {visits_file}")
 print("Columns:", visits.columns.tolist())
 print("First few rows:")
