@@ -30,21 +30,21 @@ jobs:
         LATEST_CSV=$(ls -t VisitsData/*.csv | head -1)
         echo "csv_path=$LATEST_CSV" >> $GITHUB_OUTPUT
 
-    - name: Generate clustered map HTML (input.html)
+    - name: Generate clustered map HTML (index.html)
       run: |
         LATEST_CSV="${{ steps.download.outputs.csv_path }}"
         sed "s|visitsreport2026-03-09-2.csv|$LATEST_CSV|g" try.py > temp_try.py
-        # Rename output file from RouteOptimization_Clustered_Map.html → input.html
-        sed -i 's|with open("RouteOptimization_Clustered_Map.html"|with open("input.html"|g' temp_try.py
+        # Rename output file from RouteOptimization_Clustered_Map.html → index.html
+        sed -i 's|with open("RouteOptimization_Clustered_Map.html"|with open("index.html"|g' temp_try.py
         python temp_try.py
         rm temp_try.py
 
-    - name: Generate on-premise map HTML (RouteOptimization_OnPremise.html)
+    - name: Generate on-premise map HTML (RouteOptimization_OnPremise_Map.html)
       run: |
         LATEST_CSV="${{ steps.download.outputs.csv_path }}"
         sed "s|visitsreport2026-03-09-2.csv|$LATEST_CSV|g" try2.py > temp_try2.py
-        # Rename output file from RouteOptimization_OnPremise_Map.html → RouteOptimization_OnPremise.html
-        sed -i 's|with open("RouteOptimization_OnPremise_Map.html"|with open("RouteOptimization_OnPremise.html"|g' temp_try2.py
+        # Rename output file from RouteOptimization_OnPremise_Map.html → RouteOptimization_OnPremise_Map.html
+        sed -i 's|with open("RouteOptimization_OnPremise_Map.html"|with open("RouteOptimization_OnPremise_Map.html"|g' temp_try2.py
         python temp_try2.py
         rm temp_try2.py
 
