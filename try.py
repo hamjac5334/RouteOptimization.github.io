@@ -241,6 +241,20 @@ for idx, row in grouped.iterrows():
         "suppliers": suppliers
     })
 
+colors_assigned = {}
+for m in markers_data:
+    colors_assigned[m['visit_color']] = colors_assigned.get(m['visit_color'], 0) + 1
+print(f"\n=== VISIT COLOR DISTRIBUTION IN MARKERS ===")
+print(colors_assigned)
+
+# Check a few specific retailers
+print("\n=== SAMPLE RETAILER LOOKUPS ===")
+for m in markers_data[:10]:
+    retailer = m['retailer']
+    visit_date = visit_map.get(retailer.strip())
+    print(f"  '{retailer}' → {visit_date} → {m['visit_color']}")
+    
+
 boxes = []
 for cluster_id in sorted(df["Cluster"].unique()):
     sub = df[df["Cluster"] == cluster_id]
