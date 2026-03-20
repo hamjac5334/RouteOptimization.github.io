@@ -565,33 +565,28 @@ var CENTER  = [""" + str(center_lat) + "," + str(center_lng) + """];
 var ORS_API_KEY = "eyJvcmciOiI1YjNjZTM1OTc4NTExMTAwMDFjZjYyNDgiLCJpZCI6ImY2OTY4YjgxYTUxMjQwYmNiNjAxNzk4ZTY4YzEyNzlhIiwiaCI6Im11cm11cjY0In0=";
 var visitMode = false;
 
+function currentFillColor(m) {
+  return visitMode ? m.visit_color : m.color;
+}
+
 
 function applyClusterColors() {
   MARKERS.forEach(function(m) {
     var circle = layerMap[m.idx];
     if(circle){
-      circle.setStyle({
-        radius:7,
-        color:'#ffffff',
-        weight:1.5,
-        fillColor:m.color,
-        fillOpacity:0.85
-      });
+      circle.setStyle({radius:7, color:'#ffffff', weight:1.5,
+        fillColor:m.color, fillOpacity:0.85});
     }
   });
 }
+
 
 function applyVisitColors() {
   MARKERS.forEach(function(m) {
     var circle = layerMap[m.idx];
     if(circle){
-      circle.setStyle({
-        radius:7,
-        color:'#ffffff',
-        weight:1.5,
-        fillColor:m.visit_color,
-        fillOpacity:0.9
-      });
+      circle.setStyle({radius:7, color:'#ffffff', weight:1.5,
+        fillColor:m.visit_color, fillOpacity:0.9});
     }
   });
 }
@@ -645,25 +640,14 @@ function updateMarkerVisibility() {
   MARKERS.forEach(function(m) {
     var circle = layerMap[m.idx];
     if (circle) {
-      var shouldShow = false;
+      var shouldShow = Array.isArray(m.suppliers)
+        ? m.suppliers.some(function(s){ return supplierVisibility[s]; })
+        : supplierVisibility[m.suppliers];
 
-      if (Array.isArray(m.suppliers)) {
-        shouldShow = m.suppliers.some(function(s){
-          return supplierVisibility[s];
-        });
-      } else {
-        shouldShow = supplierVisibility[m.suppliers];
-      }
-
-      if (Array.isArray(m.suppliers)) {
-        shouldShow = m.suppliers.some(function(s){
-        return supplierVisibility[s];
-      });
-} else {
-  shouldShow = supplierVisibility[m.suppliers];
-}
       if (shouldShow) {
-        circle.setStyle({radius:7, color:'#ffffff', weight:1.5, fillColor:m.color, fillOpacity:0.85});
+        // ← FIXED: use currentFillColor() instead of hardcoded m.color
+        circle.setStyle({radius:7, color:'#ffffff', weight:1.5,
+          fillColor:currentFillColor(m), fillOpacity:0.85});
         circle.addTo(map);
       } else {
         map.removeLayer(circle);
@@ -745,7 +729,9 @@ function clearHighlights() {
   highlightedIdx.forEach(function(idx){
     var m=MARKERS.find(function(x){return x.idx===idx;});
     if(m&&layerMap[idx])
-      layerMap[idx].setStyle({radius:7,color:'#ffffff',weight:1.5,fillColor:m.color,fillOpacity:0.85});
+      // ← FIXED: use currentFillColor() instead of hardcoded m.color
+      layerMap[idx].setStyle({radius:7,color:'#ffffff',weight:1.5,
+        fillColor:currentFillColor(m),fillOpacity:0.85});
   });
   highlightedIdx=[];
 }
