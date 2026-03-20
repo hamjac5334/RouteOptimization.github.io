@@ -578,6 +578,8 @@ function applyClusterColors() {
         fillColor:m.color, fillOpacity:0.85});
     }
   });
+  initSupplierFilter();
+  updateMarkerVisibility();
 }
 
 
