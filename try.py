@@ -9,7 +9,7 @@
 # df[["Supplier" = "Rusty Bull Brewing Company"]]
 # df[["Supplier" = "Southern Barrel Brewing Company"]]
 
-
+import os
 import sys
 import pandas as pd
 import numpy as np
@@ -127,34 +127,36 @@ visits["Visit Date"] = pd.to_datetime(
     errors="coerce"
 )
 
+visits["Business Name"] = visits["Business Name"].str.strip()
+
 # Get most recent visit per business
 visits_latest = (
-    visits.sort_values("Visit Date")
-    .groupby("Business Name")
-    .tail(1)
+    visits.dropna(subset=["Visit Date"])
+    .sort_values("Visit Date")
+    .groupby("Business Name", as_index=False)
+    .last()
 )
 
 # Map retailer → visit date
 visit_map = dict(zip(visits_latest["Business Name"], visits_latest["Visit Date"]))
-
-today = pd.Timestamp.today()
+today = pd.Timestamp.today().normalize()
+print(f"Unique businesses with visit dates: {len(visit_map)}")
 
 def get_visit_color(retailer):
-    visit_date = visit_map.get(retailer)
-
-    if pd.isna(visit_date):
-        return "#7f1d1d"  # dark red if no visit
-
-    days = (today - visit_date).days
-
+    if not isinstance(retailer, str):
+        return "#7f1d1d"
+    visit_date = visit_map.get(retailer.strip())
+    if visit_date is None or pd.isna(visit_date):
+        return "#7f1d1d"
+    days = (today - visit_date.normalize()).days
     if days <= 7:
-        return "#16a34a"   
+        return "#16a34a"
     elif days <= 14:
-        return "#f97316"    
+        return "#f97316"
     elif days <= 21:
-        return "#fc1414"  
+        return "#fc1414"
     else:
-        return "#7f1d1d"   
+        return "#7f1d1d"  
 
 
 
@@ -222,7 +224,10 @@ for idx, row in grouped.iterrows():
     c = int(row["Cluster"])
     suppliers = row["Supplier"]
 
-    visit_color = get_visit_color(row["Retailer"])
+    visit_color = get_visit_color(str(row["Retailer"]).strip())
+
+    print("Sample Retailer names:", df["Retailer"].head(5).tolist())
+    print("Sample visit_map keys:", list(visit_map.keys())[:5])
 
     markers_data.append({
         "idx": idx,
