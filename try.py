@@ -710,7 +710,7 @@ function setMode(m) {
   document.getElementById('btn-route').classList.toggle('active', m==='route');
 
   document.getElementById('btn-home').addEventListener('click', function () {
-  window.location.href = 'RouteOptimization_OnPremise_Map.html';
+  window.location.href = 'index.html';
 });
 
   document.getElementById('sb-left').classList.toggle('hidden',  m!=='close');
