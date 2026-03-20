@@ -1001,7 +1001,7 @@ setMode('close');
 </body>
 </html>"""
 
-with open("RouteOptimization_Clustered_Map.html", "w", encoding="utf-8") as f:
+with open("index.html", "w", encoding="utf-8") as f:
     f.write(html)
 
-print("✓ HTML map with supplier filter panel saved to RouteOptimization_Clustered_Map.html!")
+print("✓ HTML map with supplier filter panel saved to index.html!")
