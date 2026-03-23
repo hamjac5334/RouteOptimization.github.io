@@ -565,39 +565,7 @@ var CENTER  = [""" + str(center_lat) + "," + str(center_lng) + """];
 var ORS_API_KEY = "eyJvcmciOiI1YjNjZTM1OTc4NTExMTAwMDFjZjYyNDgiLCJpZCI6ImY2OTY4YjgxYTUxMjQwYmNiNjAxNzk4ZTY4YzEyNzlhIiwiaCI6Im11cm11cjY0In0=";
 var visitMode = false;
 
-function currentFillColor(m) {
-  return visitMode ? m.visit_color : m.color;
-}
-
-
-function applyClusterColors() {
-  MARKERS.forEach(function(m) {
-    var circle = layerMap[m.idx];
-    if(circle){
-      circle.setStyle({radius:7, color:'#ffffff', weight:1.5,
-        fillColor:m.color, fillOpacity:0.85});
-    }
-  });
-  initSupplierFilter();
-  updateMarkerVisibility();
-}
-
-
-function applyVisitColors() {
-  MARKERS.forEach(function(m) {
-    var circle = layerMap[m.idx];
-    if(circle){
-      circle.setStyle({radius:7, color:'#ffffff', weight:1.5,
-        fillColor:m.visit_color, fillOpacity:0.9});
-    }
-  });
-}
-
-
-
-
-
-// Map 
+// Map
 var map = L.map('map', {zoomControl:true}).setView(CENTER, 12);
 L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png', {
   attribution: '&copy; <a href="https://openstreetmap.org">OpenStreetMap</a>', maxZoom:19
@@ -612,15 +580,13 @@ BOXES.forEach(function(b) {
 
 // SUPPLIER FILTER
 var layerMap = {}, supplierVisibility = {};
-var allMarkersVisible = true;
 
-// Initialize supplier checkboxes (all checked by default)
 function initSupplierFilter() {
   SUPPLIERS.forEach(function(supplier) {
     supplierVisibility[supplier] = true;
   });
-  
   var checkboxesContainer = document.getElementById('supplier-checkboxes');
+  checkboxesContainer.innerHTML = '';
   SUPPLIERS.forEach(function(supplier, index) {
     var checkboxDiv = document.createElement('div');
     checkboxDiv.className = 'supplier-checkbox';
@@ -632,12 +598,12 @@ function initSupplierFilter() {
   });
 }
 
-// Toggle supplier visibility
 function toggleSupplier(supplier) {
   supplierVisibility[supplier] = !supplierVisibility[supplier];
   updateMarkerVisibility();
 }
 
+// Single source of truth for all marker colors and visibility
 function updateMarkerVisibility() {
   MARKERS.forEach(function(m) {
     var circle = layerMap[m.idx];
@@ -647,9 +613,11 @@ function updateMarkerVisibility() {
         : supplierVisibility[m.suppliers];
 
       if (shouldShow) {
-        // ← FIXED: use currentFillColor() instead of hardcoded m.color
-        circle.setStyle({radius:7, color:'#ffffff', weight:1.5,
-          fillColor:currentFillColor(m), fillOpacity:0.85});
+        circle.setStyle({
+          radius: 7, color: '#ffffff', weight: 1.5,
+          fillColor: visitMode ? m.visit_color : m.color,
+          fillOpacity: 0.85
+        });
         circle.addTo(map);
       } else {
         map.removeLayer(circle);
@@ -658,7 +626,7 @@ function updateMarkerVisibility() {
   });
 }
 
-// State 
+// State
 var mode='close', highlightedIdx=[],
     routeSel={}, routeOrder=[], isOptimizing=false;
 
@@ -667,18 +635,14 @@ MARKERS.forEach(function(m) {
   var circle = L.circleMarker([m.lat, m.lng], {
     radius:7, color:'#ffffff', weight:1.5, fillColor:m.color, fillOpacity:0.85
   });
-var supplierList = Array.isArray(m.suppliers)
-  ? m.suppliers.join(", ")
-  : m.suppliers;
-
-circle.bindTooltip(
-  '<b>'+esc(m.retailer)+'</b><br>'+
-  '<span style="color:#6b7280">Employee '+m.cluster+
-  ' | Suppliers: '+esc(supplierList)+
-  ' · '+esc(m.address)+'</span>',
-  {direction:'top', offset:[0,-9], sticky:false}
-);
-
+  var supplierList = Array.isArray(m.suppliers) ? m.suppliers.join(", ") : m.suppliers;
+  circle.bindTooltip(
+    '<b>'+esc(m.retailer)+'</b><br>'+
+    '<span style="color:#6b7280">Employee '+m.cluster+
+    ' | Suppliers: '+esc(supplierList)+
+    ' · '+esc(m.address)+'</span>',
+    {direction:'top', offset:[0,-9], sticky:false}
+  );
   circle.on('click', function(){ onMarkerClick(m); });
   layerMap[m.idx] = circle;
 });
@@ -686,33 +650,29 @@ circle.bindTooltip(
 initSupplierFilter();
 updateMarkerVisibility();
 
-// Mode switching 
+// Mode switching
 document.getElementById('btn-close').addEventListener('click', function(){ setMode('close'); });
 document.getElementById('btn-route').addEventListener('click', function(){ setMode('route'); });
+document.getElementById('btn-home').addEventListener('click', function(){
+  window.location.href = 'RouteOptimization_OnPremise_Map.html';
+});
+
 document.getElementById('btn-visits').addEventListener('click', function(){
-
-    visitMode = !visitMode;
-
-    if (visitMode) {
-        applyVisitColors();
-        this.style.background = "#111827";
-        this.style.color = "white";
+  visitMode = !visitMode;
+  if (visitMode) {
+    this.style.background = "#111827";
+    this.style.color = "white";
   } else {
-        applyClusterColors();
-        this.style.background = "white";
-        this.style.color = "#374151";
+    this.style.background = "white";
+    this.style.color = "#374151";
   }
+  updateMarkerVisibility();  // single call handles everything
 });
 
 function setMode(m) {
   mode=m;
   document.getElementById('btn-close').classList.toggle('active', m==='close');
   document.getElementById('btn-route').classList.toggle('active', m==='route');
-
-  document.getElementById('btn-home').addEventListener('click', function () {
-  window.location.href = 'index.html';
-});
-
   document.getElementById('sb-left').classList.toggle('hidden',  m!=='close');
   document.getElementById('sb-right').classList.toggle('hidden', m!=='route');
   if(m!=='close') clearHighlights();
@@ -731,9 +691,8 @@ function clearHighlights() {
   highlightedIdx.forEach(function(idx){
     var m=MARKERS.find(function(x){return x.idx===idx;});
     if(m&&layerMap[idx])
-      // ← FIXED: use currentFillColor() instead of hardcoded m.color
-      layerMap[idx].setStyle({radius:7,color:'#ffffff',weight:1.5,
-        fillColor:currentFillColor(m),fillOpacity:0.85});
+      layerMap[idx].setStyle({radius:7, color:'#ffffff', weight:1.5,
+        fillColor: visitMode ? m.visit_color : m.color, fillOpacity:0.85});
   });
   highlightedIdx=[];
 }
@@ -811,7 +770,7 @@ function buildRouteCard(m,num,key) {
   nameEl.className='card-name'; nameEl.textContent=m.retailer; nameEl.style.paddingRight='36px';
   var tagsEl=document.createElement('div');
   tagsEl.className='card-tags';
-  tagsEl.innerHTML='<span class="tag tag-emp">Employee '+m.cluster+'</span><span class="tag tag-emp">'+esc(m.supplier)+'</span>';
+  tagsEl.innerHTML='<span class="tag tag-emp">Employee '+m.cluster+'</span>';
   var addrEl=document.createElement('div');
   addrEl.className='card-addr'; addrEl.textContent=m.address;
   card.appendChild(orderNum); card.appendChild(delBtn);
@@ -860,28 +819,21 @@ document.getElementById('btn-clear-route').addEventListener('click', function(){
 function updateRouteBadge(){ document.getElementById('route-badge').textContent=routeOrder.length+' selected'; }
 function updateOptimizeBtn(){ document.getElementById('btn-optimize').disabled=routeOrder.length<2||isOptimizing; }
 
-// OPTIMIZE ROUTE via OpenRouteService 
+// OPTIMIZE ROUTE via OpenRouteService
 document.getElementById('btn-optimize').addEventListener('click', optimizeRoute);
 
 function optimizeRoute() {
   if(isOptimizing||routeOrder.length<2) return;
-
   isOptimizing=true;
   var btn = document.getElementById('btn-optimize');
   btn.disabled=true;
   btn.innerHTML='<div class="spin"></div> Optimizing…';
-
   var stops = routeOrder.map(function(key){ return routeSel[key]; });
-
-  // keep first selected stop as fixed start/end
   var firstStop = stops[0];
   var firstKey  = routeOrder[0];
-
-  // jobs = all stops except the first
   var jobs = stops.slice(1).map(function(s, i) {
     return { id: i, location: [s.lng, s.lat] };
   });
-
   var payload = {
     jobs: jobs,
     vehicles: [{
@@ -891,7 +843,6 @@ function optimizeRoute() {
       end:   [firstStop.lng, firstStop.lat]
     }]
   };
-
   fetch("https://api.openrouteservice.org/optimization", {
     method: "POST",
     headers: {
@@ -912,16 +863,13 @@ function optimizeRoute() {
   .then(function(data) {
     var steps = data.routes && data.routes[0] && data.routes[0].steps;
     if(!steps) throw new Error("No route returned from ORS");
-
     var orderedIndices = steps
       .filter(function(s){ return s.type === "job"; })
       .map(function(s){ return s.id; });
-
     if(orderedIndices.length !== stops.length - 1) {
       throw new Error("ORS returned " + orderedIndices.length +
                       " steps for " + (stops.length - 1) + " jobs");
     }
-
     applyOptimizedOrder(firstKey, orderedIndices);
     showToast("Route optimized!", "success");
   })
@@ -942,26 +890,18 @@ function optimizeRoute() {
 }
 
 function applyOptimizedOrder(firstKey, order) {
-  // all current stops (in their pre-optimization order)
   var allStops = routeOrder.map(function(key){ return routeSel[key]; });
-  // jobs correspond to all stops except the first
   var otherStops = allStops.slice(1);
-
-  // map ORS job ids back to our keys
   var orderedKeys = order.map(function(i) {
     return String(otherStops[i].idx);
   });
-
-  // prepend the original first stop so it always stays #1 in UI
   routeOrder = [String(firstKey)].concat(orderedKeys);
-
   var list=document.getElementById('route-list');
   var cards=list.querySelectorAll('.loc-card');
   cards.forEach(function(c){
     c.style.transition='opacity .15s ease';
     c.style.opacity='0';
   });
-
   setTimeout(function(){
     list.innerHTML='';
     routeOrder.forEach(function(key,i){
@@ -992,6 +932,7 @@ function showToast(msg,type){
   clearTimeout(t._timer);
   t._timer=setTimeout(function(){t.className='';},3800);
 }
+
 function esc(s){
   return String(s).replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;').replace(/"/g,'&quot;');
 }
