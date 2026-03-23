@@ -625,10 +625,11 @@ function updateMarkerVisibility() {
     var circle = layerMap[m.idx];
     if (!circle) return;
 
-    var shouldShow;
-    if (Array.isArray(m.suppliers)) {
+    var shouldShow = true;
+
+    if (Array.isArray(m.suppliers) && m.suppliers.length > 0) {
       shouldShow = m.suppliers.some(function(s) { return supplierVisibility[s]; });
-    } else {
+    } else if (m.suppliers && supplierVisibility.hasOwnProperty(m.suppliers)) {
       shouldShow = supplierVisibility[m.suppliers];
     }
 
@@ -679,7 +680,7 @@ MARKERS.forEach(function(m) {
   var circle = L.circleMarker([m.lat, m.lng], {
     radius:7, color:'#ffffff', weight:1.5,
     fillColor:m.color, fillOpacity:0.85
-  });
+  }).addTo(map);
 
   var supplierList = Array.isArray(m.suppliers)
     ? m.suppliers.join(", ")
