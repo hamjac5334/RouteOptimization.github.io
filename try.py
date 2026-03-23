@@ -38,11 +38,19 @@ def get_driving_distance_matrix(coords):
         full[n1:, n1:] = d2
         return full
     origins = "|".join([f"{lat},{lon}" for lat, lon in coords])
-    params = {"origins": origins, "destinations": origins,
-              "key": GOOGLE_API_KEY, "units": "metric", "mode": "driving"}
+    params = {
+        "origins": origins,
+        "destinations": origins,
+        "key": GOOGLE_API_KEY,
+        "units": "metric",
+        "mode": "driving",
+    }
     try:
-        r = requests.get("https://maps.googleapis.com/maps/api/distancematrix/json",
-                         params=params, timeout=15)
+        r = requests.get(
+            "https://maps.googleapis.com/maps/api/distancematrix/json",
+            params=params,
+            timeout=15,
+        )
         data = r.json()
     except Exception as e:
         print(f"  API request failed: {e}")
@@ -74,7 +82,7 @@ def straight_line_matrix(coords):
             lat1, lon1 = map(radians, coords[i])
             lat2, lon2 = map(radians, coords[j])
             dlat, dlon = lat2 - lat1, lon2 - lon1
-            a = sin(dlat/2)**2 + cos(lat1)*cos(lat2)*sin(dlon/2)**2
+            a = sin(dlat / 2) ** 2 + cos(lat1) * cos(lat2) * sin(dlon / 2) ** 2
             dm[i, j] = R * 2 * atan2(sqrt(a), sqrt(1 - a))
     return dm
 
@@ -97,12 +105,11 @@ def compute_route_order(coords):
         visited.append(int(np.argmin(row)))
     return visited
 
-# Load Visit Reports 
+# ----------------- VISITS LOADING -----------------
 
 if len(sys.argv) > 1:
     visits_file = sys.argv[1]
 else:
-    # Auto-find the most recently downloaded CSV in VisitsData/
     csv_files = glob.glob(os.path.join("VisitsData", "*.csv"))
     if not csv_files:
         raise FileNotFoundError("No CSV found in VisitsData/ — run download_visits.py first")
@@ -111,41 +118,46 @@ else:
 
 visits = pd.read_csv(
     visits_file,
-    quotechar='"',           # Handles quoted fields with commas/URLs
-    quoting=0,               # QUOTE_MINIMAL
-    escapechar='\\',
-    on_bad_lines='skip',     # Skip malformed rows
-    low_memory=False
+    quotechar='"',
+    quoting=0,
+    escapechar="\\",
+    on_bad_lines="skip",
+    low_memory=False,
 )
 print(f"Loaded {len(visits)} visits rows, columns: {list(visits.columns)}")
-print("Visit Date sample:", visits['Visit Date'].head().tolist())
+print("Visit Date sample:", visits["Visit Date"].head().tolist())
 
-# Convert date column
 visits["Visit Date"] = pd.to_datetime(
-    visits["Visit Date"].str.replace(r'ET$', '', regex=True).str.strip(),
-    format="%m/%d/%y %H:%M:%S",
-    errors="coerce"
+    visits["Visit Date"].str.replace(r"ET$", "", regex=True).str.strip(),
+    errors="coerce",
 )
 
-visits["Business Name"] = visits["Business Name"].str.strip()
+visits["Business Name"] = visits["Business Name"].astype(str).str.strip()
 
-# Get most recent visit per business
+def normalize_name(s: str) -> str:
+    s = s.strip().lower()
+    for suffix in [" inc.", " inc", " llc", ",", "."]:
+        s = s.replace(suffix, "")
+    return " ".join(s.split())
+
+visits["Business Name Norm"] = visits["Business Name"].apply(normalize_name)
+
 visits_latest = (
     visits.dropna(subset=["Visit Date"])
     .sort_values("Visit Date")
-    .groupby("Business Name", as_index=False)
+    .groupby("Business Name Norm", as_index=False)
     .last()
 )
 
-# Map retailer → visit date
-visit_map = dict(zip(visits_latest["Business Name"], visits_latest["Visit Date"]))
+visit_map = dict(zip(visits_latest["Business Name Norm"], visits_latest["Visit Date"]))
 today = pd.Timestamp.today().normalize()
 print(f"Unique businesses with visit dates: {len(visit_map)}")
 
 def get_visit_color(retailer):
     if not isinstance(retailer, str):
         return "#7f1d1d"
-    visit_date = visit_map.get(retailer.strip())
+    key = normalize_name(retailer)
+    visit_date = visit_map.get(key)
     if visit_date is None or pd.isna(visit_date):
         return "#7f1d1d"
     days = (today - visit_date.normalize()).days
@@ -156,30 +168,27 @@ def get_visit_color(retailer):
     elif days <= 21:
         return "#fc1414"
     else:
-        return "#7f1d1d"  
+        return "#7f1d1d"
 
+# ----------------- CLUSTER, ROUTES, MARKERS -----------------
 
-
-# Input 
 num_clusters = 5
 
-# Load
 df = pd.read_csv("Corrected_OffPremise_geocodio_02093207d60ca27effb2b569b318426f1b7e7dfb.csv")
 df = df.rename(columns={"Geocodio Latitude": "Latitude", "Geocodio Longitude": "Longitude"})
 df = df.dropna(subset=["Latitude", "Longitude"]).reset_index(drop=True)
 print("Data loaded. Total locations:", len(df))
 
-# Clustering
 transformer = Transformer.from_crs("epsg:4326", "epsg:3857", always_xy=True)
-proj = np.array([transformer.transform(lon, lat)
-                 for lat, lon in zip(df["Latitude"], df["Longitude"])])
+proj = np.array(
+    [transformer.transform(lon, lat) for lat, lon in zip(df["Latitude"], df["Longitude"])]
+)
 kmeans = KMeans(n_clusters=num_clusters, random_state=42, n_init=20, max_iter=500)
 df["Cluster"] = kmeans.fit_predict(proj)
-print("\\nCluster counts:")
+print("\nCluster counts:")
 print(df["Cluster"].value_counts().sort_index())
 
-# Routing
-print("\\nComputing routes...")
+print("\nComputing routes...")
 route_output = []
 for cluster_id, group in df.groupby("Cluster"):
     print(f"  Cluster {cluster_id + 1} ({len(group)} pts)")
@@ -194,79 +203,84 @@ for cluster_id, group in df.groupby("Cluster"):
 route_df = pd.concat(route_output, ignore_index=True)
 geocode_cols = [c for c in route_df.columns if c.startswith("Geocodio")]
 route_df = route_df.drop(columns=geocode_cols + ["Latitude", "Longitude"], errors="ignore")
-excel_cols = ["Cluster", "Visit Order"] + [c for c in route_df.columns
-                                            if c not in ["Cluster", "Visit Order"]]
+excel_cols = ["Cluster", "Visit Order"] + [
+    c for c in route_df.columns if c not in ["Cluster", "Visit Order"]
+]
 route_df = route_df[excel_cols].sort_values(["Cluster", "Visit Order"]).reset_index(drop=True)
 route_df.to_excel("Optimized_Routes_By_Cluster.xlsx", index=False)
 print("✓ Excel saved!")
 
-# Get Suppliers
 unique_suppliers = sorted(df["Supplier"].dropna().unique())
 print(f"Found {len(unique_suppliers)} unique suppliers: {unique_suppliers}")
 
-COLORS = ["#0817a1","#f79845","#226b27","#bd32d9","#a30a23",
-          "#a335e8","#f011dd","#a30a23","#0817a1","#bd32d9"]
-
+COLORS = [
+    "#0817a1",
+    "#f79845",
+    "#226b27",
+    "#bd32d9",
+    "#a30a23",
+    "#a335e8",
+    "#f011dd",
+    "#a30a23",
+    "#0817a1",
+    "#bd32d9",
+]
 
 grouped = (
-    df.groupby(
-        ["Retailer", "Address", "City", "Latitude", "Longitude", "Cluster"]
-    )
-    .agg({
-        "Supplier": lambda x: sorted(set(x.dropna()))
-    })
+    df.groupby(["Retailer", "Address", "City", "Latitude", "Longitude", "Cluster"])
+    .agg({"Supplier": lambda x: sorted(set(x.dropna()))})
     .reset_index()
 )
-
 
 markers_data = []
 for idx, row in grouped.iterrows():
     c = int(row["Cluster"])
     suppliers = row["Supplier"]
-
-    visit_color = get_visit_color(str(row["Retailer"]).strip())
-
-    print("Sample Retailer names:", df["Retailer"].head(5).tolist())
-    print("Sample visit_map keys:", list(visit_map.keys())[:5])
-
-    markers_data.append({
-        "idx": idx,
-        "lat": float(row["Latitude"]),
-        "lng": float(row["Longitude"]),
-        "retailer": str(row["Retailer"]),
-        "address": f"{row['Address']}, {row['City']}",
-        "cluster": c + 1,
-        "color": COLORS[c % len(COLORS)],
-        "visit_color": visit_color,
-        "suppliers": suppliers
-    })
+    visit_color = get_visit_color(row["Retailer"])
+    markers_data.append(
+        {
+            "idx": idx,
+            "lat": float(row["Latitude"]),
+            "lng": float(row["Longitude"]),
+            "retailer": str(row["Retailer"]),
+            "address": f"{row['Address']}, {row['City']}",
+            "cluster": c + 1,
+            "color": COLORS[c % len(COLORS)],
+            "visit_color": visit_color,
+            "suppliers": suppliers,
+        }
+    )
 
 colors_assigned = {}
 for m in markers_data:
-    colors_assigned[m['visit_color']] = colors_assigned.get(m['visit_color'], 0) + 1
-print(f"\n=== VISIT COLOR DISTRIBUTION IN MARKERS ===")
+    colors_assigned[m["visit_color"]] = colors_assigned.get(m["visit_color"], 0) + 1
+print("\n=== VISIT COLOR DISTRIBUTION IN MARKERS ===")
 print(colors_assigned)
 
-# Check a few specific retailers
 print("\n=== SAMPLE RETAILER LOOKUPS ===")
 for m in markers_data[:10]:
-    retailer = m['retailer']
-    visit_date = visit_map.get(retailer.strip())
+    retailer = m["retailer"]
+    key = normalize_name(retailer)
+    visit_date = visit_map.get(key)
     print(f"  '{retailer}' → {visit_date} → {m['visit_color']}")
-    
 
 boxes = []
 for cluster_id in sorted(df["Cluster"].unique()):
     sub = df[df["Cluster"] == cluster_id]
-    boxes.append({"color": COLORS[cluster_id % len(COLORS)], "bounds": [
-        [float(sub["Latitude"].min()), float(sub["Longitude"].min())],
-        [float(sub["Latitude"].max()), float(sub["Longitude"].max())],
-    ]})
+    boxes.append(
+        {
+            "color": COLORS[cluster_id % len(COLORS)],
+            "bounds": [
+                [float(sub["Latitude"].min()), float(sub["Longitude"].min())],
+                [float(sub["Latitude"].max()), float(sub["Longitude"].max())],
+            ],
+        }
+    )
 
 center_lat = float(df["Latitude"].mean())
 center_lng = float(df["Longitude"].mean())
 markers_json = json.dumps(markers_data)
-boxes_json   = json.dumps(boxes)
+boxes_json = json.dumps(boxes)
 suppliers_json = json.dumps(unique_suppliers)
 
 # HTML
