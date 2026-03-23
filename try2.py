@@ -9,6 +9,8 @@
 
 
 import sys
+import glob
+import os
 import pandas as pd
 import numpy as np
 import requests
@@ -102,73 +104,58 @@ def compute_route_order(coords):
         visited.append(int(np.argmin(row)))
     return visited
 
-# ----------------- VISITS LOADING -----------------
+# ----------------- VISITS LOADING (same method as File 1) -----------------
 
 if len(sys.argv) > 1:
     visits_file = sys.argv[1]
 else:
-    visits_file = "visitsreport2026-03-09-2.csv"
+    csv_files = glob.glob(os.path.join("VisitsData", "*.csv"))
+    if not csv_files:
+        raise FileNotFoundError("No CSV found in VisitsData/ — run download_visits.py first")
+    visits_file = max(csv_files, key=os.path.getmtime)
+    print(f"Auto-selected latest visits file: {visits_file}")
 
-print(f"Using CSV: {visits_file}")
-visits = pd.read_csv(visits_file)
+visits = pd.read_csv(
+    visits_file,
+    quotechar='"',
+    quoting=0,
+    escapechar='\\',
+    on_bad_lines='skip',
+    low_memory=False
+)
+print(f"Loaded {len(visits)} visits rows, columns: {list(visits.columns)}")
+print("Visit Date sample:", visits['Visit Date'].head().tolist())
 
-print("\n=== RAW 'Visit Date' SAMPLE ===")
-print(visits["Visit Date"].head().tolist())
-
-# Parse dates (if needed, adapt pattern to match your file exactly)
+# Convert date column (same as File 1)
 visits["Visit Date"] = pd.to_datetime(
-    visits["Visit Date"],
-    errors="coerce",
+    visits["Visit Date"].str.replace(r'ET$', '', regex=True).str.strip(),
+    format="%m/%d/%y %H:%M:%S",
+    errors="coerce"
 )
 
-print("\n=== PARSED 'Visit Date' SAMPLE ===")
-print(visits["Visit Date"].head().tolist())
-print("NaT count:", visits["Visit Date"].isna().sum(), "/", len(visits))
+visits["Business Name"] = visits["Business Name"].str.strip()
 
-visits["Business Name"] = visits["Business Name"].astype(str).str.strip()
-
-# Normalize business names (same logic as your working script)
-def normalize_name(s):
-    if pd.isna(s):
-        return ""
-    s = str(s).strip().lower()
-    for suffix in [" inc.", " inc", " llc", ",", "."]:
-        s = s.replace(suffix, "")
-    return " ".join(s.split())
-
-visits["Business Name Norm"] = visits["Business Name"].apply(normalize_name)
-
+# Get most recent visit per business (same as File 1)
 visits_latest = (
     visits.dropna(subset=["Visit Date"])
     .sort_values("Visit Date")
-    .groupby("Business Name Norm", as_index=False)
+    .groupby("Business Name", as_index=False)
     .last()
 )
 
-visit_map = dict(zip(visits_latest["Business Name Norm"], visits_latest["Visit Date"]))
+# Map retailer → visit date (same as File 1)
+visit_map = dict(zip(visits_latest["Business Name"], visits_latest["Visit Date"]))
 today = pd.Timestamp.today().normalize()
-print(f"Unique businesses with valid dates: {len(visit_map)}")
+print(f"Unique businesses with visit dates: {len(visit_map)}")
 
-# Quick debug distribution (optional)
-days_ago = (today - visits_latest["Visit Date"].dt.normalize()).dt.days
-print("\n=== COLOR DISTRIBUTION (debug) ===")
-print(
-    pd.cut(
-        days_ago,
-        bins=[-1, 7, 14, 21, 10_000],
-        labels=["green (<=7d)", "orange (<=14d)", "red (<=21d)", "dark red (>21d)"],
-    ).value_counts()
-)
-
+# Visit color function (same as File 1)
 def get_visit_color(retailer):
-    key = normalize_name(retailer)
-    visit_date = visit_map.get(key)
-
+    if not isinstance(retailer, str):
+        return "#7f1d1d"
+    visit_date = visit_map.get(retailer.strip())
     if visit_date is None or pd.isna(visit_date):
-        return "#7f1d1d"  # dark red if no visit
-
+        return "#7f1d1d"
     days = (today - visit_date.normalize()).days
-
     if days <= 7:
         return "#16a34a"
     elif days <= 14:
@@ -238,7 +225,7 @@ for idx, row in grouped.iterrows():
     c = int(row["Cluster"])
     suppliers = row["Supplier"]
 
-    visit_color = get_visit_color(row["Retailer"])
+    visit_color = get_visit_color(str(row["Retailer"]).strip())
 
     markers_data.append({
         "idx": idx,
@@ -252,7 +239,7 @@ for idx, row in grouped.iterrows():
         "suppliers": suppliers
     })
 
-# Optional debugging
+# Debug output
 colors_assigned = {}
 for m in markers_data:
     colors_assigned[m["visit_color"]] = colors_assigned.get(m["visit_color"], 0) + 1
@@ -262,8 +249,7 @@ print(colors_assigned)
 print("\n=== SAMPLE RETAILER LOOKUPS ===")
 for m in markers_data[:10]:
     retailer = m["retailer"]
-    key = normalize_name(retailer)
-    visit_date = visit_map.get(key)
+    visit_date = visit_map.get(retailer.strip())
     print(f"  '{retailer}' → {visit_date} → {m['visit_color']}")
 
 boxes = []
@@ -280,7 +266,7 @@ markers_json = json.dumps(markers_data)
 boxes_json   = json.dumps(boxes)
 suppliers_json = json.dumps(unique_suppliers)
 
-# HTML 
+# HTML
 html = """<!DOCTYPE html>
 <html lang="en">
 <head>
@@ -426,8 +412,6 @@ html = """<!DOCTYPE html>
     display: flex; align-items: center; justify-content: center; gap: 6px;
   }
   .clr-btn:hover { background: #fef2f2; border-color: #fca5a5; color: #dc2626; }
-
-  /* Optimize button */
   #btn-optimize {
     width: 100%; padding: 9px 12px; border-radius: var(--radius);
     border: 1px solid var(--accent-r-mid); background: var(--accent-r-light);
@@ -443,8 +427,6 @@ html = """<!DOCTYPE html>
     border-radius: 50%; animation: spin .6s linear infinite; flex-shrink: 0;
   }
   @keyframes spin { to { transform: rotate(360deg); } }
-
-  /* Toast */
   #toast {
     position: fixed; bottom: 80px; left: 50%; transform: translateX(-50%);
     background: var(--text); color: #fff; padding: 8px 18px; border-radius: 20px;
@@ -455,11 +437,8 @@ html = """<!DOCTYPE html>
   #toast.show    { opacity: 1; }
   #toast.error   { background: #dc2626; }
   #toast.success { background: #16a34a; }
-
   #map-wrap { flex: 1; position: relative; min-width: 0; }
   #map { width: 100%; height: 100%; }
-  
-  /* SUPPLIER FILTER PANEL */
   #supplier-panel {
     position: absolute; right: 250px; z-index: 1000;
     background: var(--surface); border: 1px solid var(--border);
@@ -482,7 +461,6 @@ html = """<!DOCTYPE html>
   }
   .supplier-checkbox:hover { background: var(--surface2); border-radius: var(--radius-sm); padding: 4px 6px; }
   .supplier-label { line-height: 1.3; color: var(--text); user-select: none; }
-  
   #mode-bar {
     position: absolute; bottom: 28px; left: 50%; transform: translateX(-50%);
     display: flex; z-index: 1000;
@@ -574,6 +552,7 @@ var BOXES     = """ + boxes_json   + """;
 var SUPPLIERS = """ + suppliers_json + """;
 var CENTER    = [""" + str(center_lat) + "," + str(center_lng) + """];
 var ORS_API_KEY = "eyJvcmciOiI1YjNjZTM1OTc4NTExMTAwMDFjZjYyNDgiLCJpZCI6ImY2OTY4YjgxYTUxMjQwYmNiNjAxNzk4ZTY4YzEyNzlhIiwiaCI6Im11cm11cjY0In0=";
+var visitMode = false;
 
 // Map
 var map = L.map('map', {zoomControl:true}).setView(CENTER, 12);
@@ -592,10 +571,8 @@ BOXES.forEach(function(b) {
 // Supplier filter + global state
 var layerMap = {}, supplierVisibility = {};
 var mode = 'close', highlightedIdx = [],
-    routeSel = {}, routeOrder = [], isOptimizing = false,
-    visitMode = false;
+    routeSel = {}, routeOrder = [], isOptimizing = false;
 
-// Initialize supplier checkboxes (all checked by default)
 function initSupplierFilter() {
   SUPPLIERS.forEach(function(supplier) {
     supplierVisibility[supplier] = true;
@@ -613,31 +590,22 @@ function initSupplierFilter() {
   });
 }
 
-// Toggle supplier visibility
 function toggleSupplier(supplier) {
   supplierVisibility[supplier] = !supplierVisibility[supplier];
   updateMarkerVisibility();
 }
 
-// Apply current mode’s color (cluster vs visit) and supplier filter
+// Single source of truth for all marker colors and visibility
 function updateMarkerVisibility() {
   MARKERS.forEach(function(m) {
     var circle = layerMap[m.idx];
     if (!circle) return;
-
-    var shouldShow = true;
-
-    if (Array.isArray(m.suppliers) && m.suppliers.length > 0) {
-      shouldShow = m.suppliers.some(function(s) { return supplierVisibility[s]; });
-    } else if (m.suppliers && supplierVisibility.hasOwnProperty(m.suppliers)) {
-      shouldShow = supplierVisibility[m.suppliers];
-    }
-
+    var shouldShow = Array.isArray(m.suppliers)
+      ? m.suppliers.some(function(s){ return supplierVisibility[s]; })
+      : supplierVisibility[m.suppliers];
     if (shouldShow) {
       circle.setStyle({
-        radius: 7,
-        color: '#ffffff',
-        weight: 1.5,
+        radius: 7, color: '#ffffff', weight: 1.5,
         fillColor: visitMode ? m.visit_color : m.color,
         fillOpacity: 0.85
       });
@@ -648,44 +616,13 @@ function updateMarkerVisibility() {
   });
 }
 
-// Helpers to explicitly apply cluster or visit colors without changing visibility
-function applyClusterColors() {
-  visitMode = false;
-  MARKERS.forEach(function(m) {
-    var circle = layerMap[m.idx];
-    if (circle && map.hasLayer(circle)) {
-      circle.setStyle({
-        radius:7,color:'#ffffff',weight:1.5,
-        fillColor:m.color,fillOpacity:0.85
-      });
-    }
-  });
-}
-
-function applyVisitColors() {
-  visitMode = true;
-  MARKERS.forEach(function(m) {
-    var circle = layerMap[m.idx];
-    if (circle && map.hasLayer(circle)) {
-      circle.setStyle({
-        radius:7,color:'#ffffff',weight:1.5,
-        fillColor:m.visit_color,fillOpacity:0.9
-      });
-    }
-  });
-}
-
 // Create markers
 MARKERS.forEach(function(m) {
   var circle = L.circleMarker([m.lat, m.lng], {
     radius:7, color:'#ffffff', weight:1.5,
     fillColor:m.color, fillOpacity:0.85
-  }).addTo(map);
-
-  var supplierList = Array.isArray(m.suppliers)
-    ? m.suppliers.join(", ")
-    : m.suppliers;
-
+  });
+  var supplierList = Array.isArray(m.suppliers) ? m.suppliers.join(", ") : m.suppliers;
   circle.bindTooltip(
     '<b>'+esc(m.retailer)+'</b><br>'+
     '<span style="color:#6b7280">Employee '+m.cluster+
@@ -693,7 +630,6 @@ MARKERS.forEach(function(m) {
     ' · '+esc(m.address)+'</span>',
     {direction:'top', offset:[0,-9], sticky:false}
   );
-
   circle.on('click', function(){ onMarkerClick(m); });
   layerMap[m.idx] = circle;
 });
@@ -704,11 +640,10 @@ updateMarkerVisibility();
 // Mode switching
 document.getElementById('btn-close').addEventListener('click', function(){ setMode('close'); });
 document.getElementById('btn-route').addEventListener('click', function(){ setMode('route'); });
-document.getElementById('btn-home').addEventListener('click', function () {
+document.getElementById('btn-home').addEventListener('click', function(){
   window.location.href = 'index.html';
 });
 
-// Visit status toggle
 document.getElementById('btn-visits').addEventListener('click', function(){
   visitMode = !visitMode;
   if (visitMode) {
@@ -744,7 +679,7 @@ function clearHighlights() {
     var m=MARKERS.find(function(x){return x.idx===idx;});
     if(m && layerMap[idx]) {
       layerMap[idx].setStyle({
-        radius:7,color:'#ffffff',weight:1.5,
+        radius:7, color:'#ffffff', weight:1.5,
         fillColor: visitMode ? m.visit_color : m.color,
         fillOpacity:0.85
       });
@@ -763,21 +698,12 @@ function doClose(src) {
     .map(function(m){return{m:m,d:hvs(src.lat,src.lng,m.lat,m.lng)};})
     .sort(function(a,b){return a.d-b.d;});
   var top5=dists.slice(0,5);
-
-  layerMap[src.idx].setStyle({
-    radius:11,color:'#1d4ed8',weight:2.5,
-    fillColor:'#3b82f6',fillOpacity:1
-  });
+  layerMap[src.idx].setStyle({radius:11,color:'#1d4ed8',weight:2.5,fillColor:'#3b82f6',fillOpacity:1});
   highlightedIdx.push(src.idx);
-
   top5.forEach(function(e){
-    layerMap[e.m.idx].setStyle({
-      radius:9,color:'#000000',weight:2,
-      fillColor:'#ffee30',fillOpacity:1
-    });
+    layerMap[e.m.idx].setStyle({radius:9,color:'#000000',weight:2,fillColor:'#ffee30',fillOpacity:1});
     highlightedIdx.push(e.m.idx);
   });
-
   var list=document.getElementById('close-list');
   list.innerHTML='';
   list.appendChild(buildCloseCard(src,null,true));
@@ -889,20 +815,16 @@ document.getElementById('btn-optimize').addEventListener('click', optimizeRoute)
 
 function optimizeRoute() {
   if(isOptimizing||routeOrder.length<2) return;
-
   isOptimizing=true;
   var btn = document.getElementById('btn-optimize');
   btn.disabled=true;
   btn.innerHTML='<div class="spin"></div> Optimizing…';
-
   var stops = routeOrder.map(function(key){ return routeSel[key]; });
   var firstStop = stops[0];
   var firstKey  = routeOrder[0];
-
   var jobs = stops.slice(1).map(function(s, i) {
     return { id: i, location: [s.lng, s.lat] };
   });
-
   var payload = {
     jobs: jobs,
     vehicles: [{
@@ -912,7 +834,6 @@ function optimizeRoute() {
       end:   [firstStop.lng, firstStop.lat]
     }]
   };
-
   fetch("https://api.openrouteservice.org/optimization", {
     method: "POST",
     headers: {
@@ -933,16 +854,13 @@ function optimizeRoute() {
   .then(function(data) {
     var steps = data.routes && data.routes[0] && data.routes[0].steps;
     if(!steps) throw new Error("No route returned from ORS");
-
     var orderedIndices = steps
       .filter(function(s){ return s.type === "job"; })
       .map(function(s){ return s.id; });
-
     if(orderedIndices.length !== stops.length - 1) {
       throw new Error("ORS returned " + orderedIndices.length +
                       " steps for " + (stops.length - 1) + " jobs");
     }
-
     applyOptimizedOrder(firstKey, orderedIndices);
     showToast("Route optimized!", "success");
   })
@@ -965,20 +883,16 @@ function optimizeRoute() {
 function applyOptimizedOrder(firstKey, order) {
   var allStops  = routeOrder.map(function(key){ return routeSel[key]; });
   var otherStops = allStops.slice(1);
-
   var orderedKeys = order.map(function(i) {
     return String(otherStops[i].idx);
   });
-
   routeOrder = [String(firstKey)].concat(orderedKeys);
-
   var list=document.getElementById('route-list');
   var cards=list.querySelectorAll('.loc-card');
   cards.forEach(function(c){
     c.style.transition='opacity .15s ease';
     c.style.opacity='0';
   });
-
   setTimeout(function(){
     list.innerHTML='';
     routeOrder.forEach(function(key,i){
@@ -1011,15 +925,11 @@ function showToast(msg,type){
 }
 
 function esc(s){
-  return String(s).replace(/&/g,'&amp;')
-                  .replace(/</g,'&lt;')
-                  .replace(/>/g,'&gt;')
-                  .replace(/"/g,'&quot;');
+  return String(s).replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;').replace(/"/g,'&quot;');
 }
 
 setMode('close');
 </script>
-
 </body>
 </html>"""
 
