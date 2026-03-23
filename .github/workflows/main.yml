@@ -103,7 +103,6 @@ jobs:
       run: |
         git config user.name "github-actions[bot]"
         git config user.email "github-actions[bot]@users.noreply.github.com"
-        git add index.html RouteOptimization_OnPremise_Map.html VisitsData/ _headers
-        git status
-        git commit -m "Nightly update $(date +'%Y-%m-%d') [skip ci]" || echo "No changes to commit"
+        git add index.html RouteOptimization_OnPremise_Map.html VisitsData/
+        git commit -m "Nightly update: new visits data & maps [skip ci]" || echo "No changes"
         git push
