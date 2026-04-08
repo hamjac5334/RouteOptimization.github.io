@@ -76,9 +76,9 @@ jobs:
         visits_latest["days_ago"] = (today - visits_latest["Visit Date"].dt.normalize()).dt.days
 
         def bucket(d):
-            if d <= 7:   return "green (<=7d)"
-            if d <= 14:  return "orange (<=14d)"
-            if d <= 21:  return "red (<=21d)"
+            if d <= 10:   return "green (<=7d)"
+            if d <= 20:  return "orange (<=14d)"
+            if d <= 30:  return "red (<=21d)"
             return "dark red (>21d)"
 
         visits_latest["color"] = visits_latest["days_ago"].apply(bucket)
