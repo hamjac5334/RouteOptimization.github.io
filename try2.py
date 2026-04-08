@@ -156,11 +156,11 @@ def get_visit_color(retailer):
     if visit_date is None or pd.isna(visit_date):
         return "#7f1d1d"
     days = (today - visit_date.normalize()).days
-    if days <= 7:
+    if days <= 10:
         return "#16a34a"
-    elif days <= 14:
+    elif days <= 20:
         return "#f97316"
-    elif days <= 21:
+    elif days <= 30:
         return "#fc1414"
     else:
         return "#7f1d1d"
