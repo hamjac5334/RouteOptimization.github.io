@@ -22,7 +22,7 @@ import warnings
 import glob
 warnings.filterwarnings("ignore")
 
-GOOGLE_API_KEY = "AIzaSyDSd-fc2wicMn2lT5L6MA5ikQrq6EPV0PQ"
+GOOGLE_API_KEY = os.getenv("ROUTE_SECRET")
 
 def get_driving_distance_matrix(coords):
     n = len(coords)
